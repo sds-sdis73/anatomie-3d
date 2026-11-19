@@ -1,0 +1,8 @@
+sources-bp3d/
+sources-za/
+outils/node_modules/
+outils/inventaire*.json
+outils/manifeste-brut.json
+outils/noms.txt
+outils/muscles-za.txt
+.DS_Store

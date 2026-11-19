@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Anatomie 3D">
+<meta name="theme-color" content="#14181d">
+<link rel="apple-touch-icon" href="icone-180.png">
+<link rel="icon" href="icone-180.png">
+<title>Anatomie 3D</title>
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+<canvas id="scene"></canvas>
+<canvas id="calque"></canvas>
+
+<!-- Chargement -->
+<div id="chargement">
+  <div class="boite-chargement">
+    <div class="titre-app">Anatomie 3D</div>
+    <div class="barre"><div id="barre-prog"></div></div>
+    <div id="texte-prog">Préparation…</div>
+  </div>
+</div>
+
+<!-- Barre d'outils gauche -->
+<nav id="outils">
+  <button class="outil" data-panneau="p-vues" title="Vues"><span class="ico">◎</span><span>Vues</span></button>
+  <button class="outil" data-panneau="p-couches" title="Couches"><span class="ico">≋</span><span>Couches</span></button>
+  <button class="outil" id="b-dessin" title="Dessiner"><span class="ico">✎</span><span>Dessin</span></button>
+  <button class="outil" data-panneau="p-recherche" title="Rechercher"><span class="ico">⌕</span><span>Chercher</span></button>
+  <div class="espace"></div>
+  <button class="outil" id="b-reinit" title="Tout réinitialiser"><span class="ico">↺</span><span>Accueil</span></button>
+  <button class="outil petit" data-panneau="p-infos" title="À propos"><span class="ico">i</span></button>
+</nav>
+
+<!-- Panneau Vues -->
+<section class="panneau" id="p-vues">
+  <h2>Vues</h2>
+  <div class="grille" id="vues-corps"></div>
+  <h3>Régions</h3>
+  <div class="grille" id="vues-regions"></div>
+  <h3>Mes vues</h3>
+  <div id="mes-vues"></div>
+  <button class="large" id="b-memoriser">＋ Mémoriser la vue actuelle</button>
+</section>
+
+<!-- Panneau Couches -->
+<section class="panneau" id="p-couches">
+  <h2>Couches</h2>
+  <div class="choix-cote" id="cote-epluche">
+    <span class="lib">Éplucher :</span>
+    <button data-cote="" class="actif">Les deux côtés</button><button data-cote="D">Côté droit</button><button data-cote="G">Côté gauche</button>
+  </div>
+  <h3>Afficher aussi</h3>
+  <label class="bascule"><input type="checkbox" id="t-ligaments"><span></span>Ligaments, disques, ménisques</label>
+  <label class="bascule"><input type="checkbox" id="t-capsules"><span></span>Capsules articulaires</label>
+  <label class="bascule"><input type="checkbox" id="t-fascias"><span></span>Fascias et aponévroses</label>
+  <label class="bascule"><input type="checkbox" id="t-nerfs"><span></span>Nerfs et moelle</label>
+  <label class="bascule"><input type="checkbox" id="t-peau-transp"><span></span>Peau transparente</label>
+  <h3>Légende</h3>
+  <div class="legende">
+    <span><i style="background:#ecdfc8"></i>Os</span><span><i style="background:#9fc3da"></i>Cartilage</span>
+    <span><i style="background:#b8473b"></i>Muscle</span><span><i style="background:#eae2cf"></i>Tendon</span>
+    <span><i style="background:#c3cdcb"></i>Ligament</span><span><i style="background:#f2c94c"></i>Nerf</span>
+    <span><i style="background:#d9dbea"></i>Fascia</span>
+  </div>
+</section>
+
+<!-- Panneau Recherche -->
+<section class="panneau" id="p-recherche">
+  <h2>Chercher une structure</h2>
+  <input type="search" id="champ-recherche" placeholder="ex. psoas, L5, sciatique, ménisque…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+  <div id="resultats"></div>
+</section>
+
+<!-- Panneau Infos -->
+<section class="panneau" id="p-infos">
+  <h2>À propos</h2>
+  <p>Atlas d'anatomie 3D pour expliquer au patient. Fonctionne sans connexion une fois chargé.</p>
+  <h3>Gestes</h3>
+  <ul>
+    <li>Un doigt : tourner autour du corps</li>
+    <li>Deux doigts : pincer pour zoomer, glisser pour déplacer</li>
+    <li>Toucher brièvement : nommer une structure</li>
+  </ul>
+  <h3>Sources et licences</h3>
+  <p class="petit">Modèles 3D : <b>Z-Anatomy</b> (Gauthier Kervyn, Lluís Vinent), d'après <b>BodyParts3D</b> © The Database Center for Life Science — licence CC BY-SA 4.0. Les modèles ont été allégés pour cet appareil.</p>
+  <p class="petit">Fiches descriptives : Z-Anatomy, d'après Wikipédia — CC BY-SA.</p>
+  <p class="petit">Moteur 3D : three.js (licence MIT).</p>
+  <p class="petit">Cet outil sert à illustrer une explication ; il ne remplace ni un atlas de référence ni un avis médical.</p>
+  <p class="petit" id="version"></p>
+  <p class="petit" id="fluidite">Faites tourner le corps pour mesurer la fluidité.</p>
+</section>
+
+<!-- Curseur d'épluchage -->
+<div id="epluchage">
+  <div class="crans" id="crans">
+    <button data-n="4">Peau</button>
+    <button data-n="3">Muscles<br>superficiels</button>
+    <button data-n="2">Muscles<br>moyens</button>
+    <button data-n="1">Muscles<br>profonds</button>
+    <button data-n="0">Squelette</button>
+  </div>
+</div>
+
+<!-- Carte de sélection -->
+<div id="carte" class="cache">
+  <div class="carte-tete">
+    <div>
+      <div id="carte-type"></div>
+      <div id="carte-nom"></div>
+    </div>
+    <button class="fermer" id="b-desel" title="Fermer">×</button>
+  </div>
+  <div class="carte-actions">
+    <button id="b-isoler">Isoler</button>
+    <button id="b-masquer">Masquer</button>
+    <button id="b-insertions">Insertions</button>
+    <button id="b-fiche">Fiche</button>
+  </div>
+</div>
+
+<!-- Bandeau d'état (isolement, masqués) -->
+<div id="etat" class="cache">
+  <span id="etat-texte"></span>
+  <button id="b-etat">Tout réafficher</button>
+</div>
+
+<!-- Barre de dessin -->
+<div id="barre-dessin" class="cache">
+  <button class="couleur actif" data-c="#e03131" style="background:#e03131"></button>
+  <button class="couleur" data-c="#1c7ed6" style="background:#1c7ed6"></button>
+  <button class="couleur" data-c="#fab005" style="background:#fab005"></button>
+  <button class="couleur" data-c="#2f9e44" style="background:#2f9e44"></button>
+  <span class="sep"></span>
+  <button id="b-mode-trait" class="mode actif">Sur le corps</button>
+  <button id="b-mode-ecran" class="mode">Sur l'écran</button>
+  <span class="sep"></span>
+  <button id="b-annuler">Annuler</button>
+  <button id="b-effacer">Tout effacer</button>
+  <button id="b-fin-dessin" class="principal">Terminé</button>
+</div>
+
+<!-- Fiche descriptive -->
+<div id="fiche" class="cache">
+  <div class="fiche-tete"><h2 id="fiche-titre"></h2><button class="fermer" id="b-fiche-fermer">×</button></div>
+  <div id="fiche-corps"></div>
+</div>
+
+<!-- Légende insertions -->
+<div id="legende-ins" class="cache">
+  <span><i style="background:#e8590c"></i>Origine</span>
+  <span><i style="background:#12b886"></i>Terminaison</span>
+</div>
+
+<div id="bulle" class="cache"></div>
+
+<script src="vendor/three.min.js"></script>
+<script src="vendor/OrbitControls.js"></script>
+<script src="app.js?v=1"></script>
+</body>
+</html>

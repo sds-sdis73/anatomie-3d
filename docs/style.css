@@ -1,0 +1,228 @@
+/* Anatomie 3D — compatible Safari 12 (iOS 12) : pas de « gap » en flex, pas de « inset ». */
+:root {
+  --fond: #14181d;
+  --fond2: #1d232a;
+  --panneau: rgba(28, 33, 40, 0.94);
+  --bord: rgba(255, 255, 255, 0.09);
+  --texte: #e9edf1;
+  --texte2: #9aa6b2;
+  --accent: #4dabf7;
+  --accent-fonce: #1971c2;
+  --rouge: #e03131;
+  --rail: 78px;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+  background: var(--fond); color: var(--texte);
+  font-family: -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 15px; -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none; -webkit-text-size-adjust: 100%;
+  touch-action: none;
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.cache { display: none !important; }
+
+#scene, #calque { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
+#scene { background: radial-gradient(ellipse at 50% 40%, #2a323c 0%, #171b21 70%); }
+#calque { pointer-events: none; }
+body.dessin-ecran #calque { pointer-events: auto; }
+
+/* ---------- Chargement ---------- */
+#chargement {
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 50;
+  background: var(--fond); display: flex; align-items: center; justify-content: center;
+  transition: opacity .4s;
+}
+#chargement.fini { opacity: 0; pointer-events: none; }
+.boite-chargement { width: 300px; text-align: center; }
+.titre-app { font-size: 26px; font-weight: 600; letter-spacing: .3px; margin-bottom: 22px; }
+.barre { height: 6px; border-radius: 3px; background: #2b333c; overflow: hidden; }
+#barre-prog { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+#texte-prog { margin-top: 12px; color: var(--texte2); font-size: 14px; }
+
+/* ---------- Rail d'outils ---------- */
+#outils {
+  position: absolute; z-index: 10; top: 0; left: 0; bottom: 0; width: var(--rail);
+  padding: 14px 0 12px; padding-top: calc(14px + env(safe-area-inset-top));
+  background: rgba(16, 19, 24, 0.86); border-right: 1px solid var(--bord);
+  display: flex; flex-direction: column; align-items: center;
+}
+.outil {
+  width: 64px; height: 62px; margin-bottom: 6px; border-radius: 14px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: var(--texte2); font-size: 11.5px;
+}
+.outil .ico { font-size: 24px; line-height: 26px; margin-bottom: 3px; color: var(--texte); }
+.outil.actif { background: rgba(77, 171, 247, 0.18); color: var(--accent); }
+.outil.actif .ico { color: var(--accent); }
+.outil.petit { height: 44px; }
+.outil.petit .ico { width: 30px; height: 30px; line-height: 28px; border: 1.5px solid var(--texte2); border-radius: 50%; font-size: 16px; font-style: italic; font-family: Georgia, serif; }
+.espace { flex: 1; }
+
+/* ---------- Panneaux ---------- */
+.panneau {
+  position: absolute; z-index: 9; top: 0; bottom: 0; left: var(--rail); width: 330px;
+  padding: 18px 18px 30px; padding-top: calc(18px + env(safe-area-inset-top));
+  background: var(--panneau); border-right: 1px solid var(--bord);
+  overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y;
+  transform: translateX(-110%); visibility: hidden; transition: transform .22s ease-out, visibility 0s linear .22s;
+  -webkit-user-select: none;
+}
+.panneau.ouvert { transform: none; visibility: visible; transition: transform .22s ease-out, visibility 0s; }
+.panneau h2 { margin: 2px 0 14px; font-size: 20px; font-weight: 600; }
+.panneau h3 { margin: 20px 0 10px; font-size: 12.5px; text-transform: uppercase; letter-spacing: .8px; color: var(--texte2); font-weight: 600; }
+.panneau p, .panneau li { line-height: 1.45; color: #cfd6dd; }
+.panneau ul { padding-left: 18px; }
+.panneau p.petit { font-size: 13px; color: var(--texte2); }
+
+.grille { display: grid; grid-template-columns: 1fr 1fr; grid-gap: 8px; }
+.grille button, .large, #mes-vues .vue {
+  min-height: 44px; padding: 8px 10px; border-radius: 10px; background: var(--fond2);
+  border: 1px solid var(--bord); text-align: left; font-size: 14px; line-height: 1.2;
+}
+.grille button:active, .large:active { background: #26303a; }
+.grille button.double { display: flex; padding: 0; overflow: hidden; }
+.grille button .nom-region { display: block; }
+.large { display: block; width: 100%; margin-top: 10px; text-align: center; color: var(--accent); }
+#mes-vues .vue { display: flex; align-items: center; margin-bottom: 8px; padding: 0; }
+#mes-vues .vue .aller { flex: 1; padding: 10px 12px; text-align: left; }
+#mes-vues .vue .suppr { width: 44px; height: 44px; color: var(--texte2); font-size: 20px; }
+#mes-vues .vide { color: var(--texte2); font-size: 13.5px; }
+
+/* région double D / G */
+.region { background: var(--fond2); border: 1px solid var(--bord); border-radius: 10px; padding: 8px 10px 8px; }
+.region .nom { font-size: 14px; margin-bottom: 6px; }
+.region .cotes { display: flex; }
+.region .cotes button { flex: 1; min-height: 34px; padding: 0; text-align: center; border-radius: 8px; background: #27303a; border: 0; font-size: 13.5px; }
+.region .cotes button + button { margin-left: 6px; }
+
+.choix-cote { display: flex; flex-wrap: wrap; align-items: center; }
+.choix-cote .lib { width: 100%; color: var(--texte2); font-size: 13.5px; margin-bottom: 8px; }
+.choix-cote button { flex: 1; min-height: 40px; border-radius: 9px; background: var(--fond2); border: 1px solid var(--bord); font-size: 13.5px; }
+.choix-cote button + button { margin-left: 6px; }
+.choix-cote button.actif { background: var(--accent-fonce); border-color: var(--accent-fonce); color: #fff; }
+
+.bascule { display: flex; align-items: center; min-height: 46px; font-size: 15px; }
+.bascule input { position: absolute; opacity: 0; pointer-events: none; }
+.bascule span {
+  position: relative; flex: none; width: 46px; height: 28px; border-radius: 14px; background: #3a434d; margin-right: 12px;
+  transition: background .15s;
+}
+.bascule span:after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff;
+  transition: transform .15s;
+}
+.bascule input:checked + span { background: var(--accent-fonce); }
+.bascule input:checked + span:after { transform: translateX(18px); }
+
+.legende { display: flex; flex-wrap: wrap; }
+.legende span, #legende-ins span { display: inline-flex; align-items: center; margin: 0 14px 8px 0; font-size: 13.5px; color: #cfd6dd; }
+.legende i, #legende-ins i { display: inline-block; width: 14px; height: 14px; border-radius: 4px; margin-right: 6px; }
+
+#champ-recherche {
+  width: 100%; height: 46px; border-radius: 10px; border: 1px solid var(--bord); background: #0f1317; color: var(--texte);
+  padding: 0 14px; font-size: 16px; -webkit-appearance: none; -webkit-user-select: text; user-select: text;
+}
+#resultats { margin-top: 10px; }
+#resultats button {
+  display: block; width: 100%; text-align: left; padding: 11px 6px; border-bottom: 1px solid var(--bord); font-size: 15px;
+}
+#resultats button small { display: block; color: var(--texte2); font-size: 12.5px; margin-top: 2px; }
+#resultats .vide { color: var(--texte2); padding: 10px 2px; }
+
+/* ---------- Curseur d'épluchage ---------- */
+#epluchage {
+  position: absolute; z-index: 8; left: var(--rail); right: 0; bottom: 0;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  display: flex; justify-content: center; pointer-events: none;
+}
+.crans {
+  pointer-events: auto; display: flex; background: rgba(16, 19, 24, 0.86); border: 1px solid var(--bord);
+  border-radius: 16px; padding: 5px;
+}
+.crans button {
+  width: 104px; min-height: 52px; border-radius: 12px; font-size: 13.5px; line-height: 1.2; color: var(--texte2);
+}
+.crans button.actif { background: var(--accent-fonce); color: #fff; }
+
+/* ---------- Carte de sélection ---------- */
+#carte {
+  position: absolute; z-index: 8; top: 14px; top: calc(14px + env(safe-area-inset-top)); right: 14px; width: 330px;
+  background: var(--panneau); border: 1px solid var(--bord); border-radius: 16px; padding: 14px 14px 12px;
+  box-shadow: 0 8px 30px rgba(0,0,0,.35);
+}
+.carte-tete { display: flex; align-items: flex-start; justify-content: space-between; }
+#carte-type { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--accent); margin-bottom: 4px; }
+#carte-nom { font-size: 19px; font-weight: 600; line-height: 1.25; }
+#carte-nom small { display: block; font-size: 14px; font-weight: 400; color: var(--texte2); margin-top: 3px; }
+.fermer { width: 36px; height: 36px; margin: -6px -6px 0 8px; font-size: 26px; line-height: 30px; color: var(--texte2); flex: none; }
+.carte-actions { display: flex; margin-top: 12px; }
+.carte-actions button {
+  flex: 1; min-height: 40px; border-radius: 9px; background: var(--fond2); border: 1px solid var(--bord); font-size: 13.5px;
+}
+.carte-actions button + button { margin-left: 6px; }
+.carte-actions button.actif { background: var(--accent-fonce); border-color: var(--accent-fonce); color: #fff; }
+.carte-actions button:disabled { opacity: .35; }
+
+#etat {
+  position: absolute; z-index: 8; top: 14px; top: calc(14px + env(safe-area-inset-top)); left: calc(var(--rail) + 14px);
+  display: flex; align-items: center; background: var(--panneau); border: 1px solid var(--bord); border-radius: 12px; padding: 6px 6px 6px 14px;
+  font-size: 14px;
+}
+#etat button { margin-left: 12px; min-height: 36px; padding: 0 12px; border-radius: 8px; background: var(--accent-fonce); color: #fff; font-size: 13.5px; }
+body.panneau-ouvert #etat { left: calc(var(--rail) + 344px); }
+
+#legende-ins {
+  position: absolute; z-index: 8; right: 14px; top: 196px; top: calc(196px + env(safe-area-inset-top)); background: var(--panneau); border: 1px solid var(--bord);
+  border-radius: 12px; padding: 10px 6px 2px 14px;
+}
+
+/* ---------- Dessin ---------- */
+#barre-dessin {
+  position: absolute; z-index: 12; left: 50%; bottom: 14px; bottom: calc(14px + env(safe-area-inset-bottom));
+  transform: translateX(-50%); margin-left: calc(var(--rail) / 2);
+  display: flex; align-items: center; background: rgba(16, 19, 24, 0.94); border: 1px solid var(--bord);
+  border-radius: 16px; padding: 7px 8px; white-space: nowrap;
+}
+#barre-dessin button { margin: 0 3px; }
+#barre-dessin .couleur { width: 38px; height: 38px; border-radius: 50%; border: 3px solid transparent; }
+#barre-dessin .couleur.actif { border-color: #fff; }
+#barre-dessin .sep { width: 1px; height: 30px; background: var(--bord); margin: 0 6px; }
+#barre-dessin .mode, #barre-dessin #b-annuler, #barre-dessin #b-effacer, #barre-dessin .principal {
+  min-height: 40px; padding: 0 12px; border-radius: 10px; background: var(--fond2); font-size: 13.5px;
+}
+#barre-dessin .mode.actif { background: #2b3a4a; color: var(--accent); }
+#barre-dessin .principal { background: var(--accent-fonce); color: #fff; }
+body.dessin #epluchage { display: none; }
+
+/* ---------- Fiche ---------- */
+#fiche {
+  position: absolute; z-index: 11; top: 14px; top: calc(14px + env(safe-area-inset-top)); right: 14px; bottom: 14px; width: 400px;
+  background: var(--panneau); border: 1px solid var(--bord); border-radius: 16px; display: flex; flex-direction: column;
+  box-shadow: 0 8px 30px rgba(0,0,0,.4);
+}
+.fiche-tete { display: flex; align-items: flex-start; justify-content: space-between; padding: 16px 16px 8px; }
+.fiche-tete h2 { margin: 0; font-size: 19px; line-height: 1.3; }
+#fiche-corps {
+  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; padding: 0 18px 20px;
+  font-size: 15px; line-height: 1.5; color: #d5dce3; -webkit-user-select: text; user-select: text;
+}
+#fiche-corps h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .7px; color: var(--accent); margin: 18px 0 6px; }
+#fiche-corps p { margin: 0 0 10px; }
+#fiche-corps .source { font-size: 12.5px; color: var(--texte2); margin-top: 20px; }
+
+#bulle {
+  position: absolute; z-index: 20; left: 50%; top: 22px; transform: translateX(-50%);
+  background: rgba(16, 19, 24, 0.94); border: 1px solid var(--bord); border-radius: 12px; padding: 10px 16px; font-size: 14.5px;
+  pointer-events: none;
+}
+
+/* Petits écrans (téléphone) */
+@media (max-width: 700px) {
+  :root { --rail: 62px; }
+  .outil { width: 54px; font-size: 10px; }
+  .panneau { width: calc(100% - var(--rail)); }
+  .crans button { width: 62px; font-size: 11px; }
+  #carte, #fiche { width: calc(100% - var(--rail) - 28px); }
+}
