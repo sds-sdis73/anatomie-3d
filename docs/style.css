@@ -226,3 +226,31 @@ body.dessin #epluchage { display: none; }
   .crans button { width: 62px; font-size: 11px; }
   #carte, #fiche { width: calc(100% - var(--rail) - 28px); }
 }
+
+/* ---------- Ajouts 1.1 ---------- */
+#carte-nom2 { font-size: 13.5px; color: var(--texte2); font-style: italic; margin-top: 3px; }
+#carte-nom2:empty { display: none; }
+#carte-liste { font-size: 13.5px; color: #cfd6dd; margin-top: 6px; line-height: 1.4; }
+.carte-actions button { font-size: 12.5px; }
+#choix-langue button { min-height: 38px; }
+#fiche-corps .encadre { background: rgba(77,171,247,.08); border: 1px solid rgba(77,171,247,.25); border-radius: 12px; padding: 4px 14px 8px; margin-bottom: 8px; }
+#fiche-corps .encadre h3 { margin-top: 12px; }
+
+#barre-quiz {
+  position: absolute; z-index: 12; left: calc(var(--rail) + 14px); right: 14px; bottom: 14px; bottom: calc(14px + env(safe-area-inset-bottom));
+  background: rgba(16, 19, 24, 0.95); border: 1px solid var(--bord); border-radius: 16px; padding: 10px 12px 12px;
+}
+.quiz-haut { display: flex; align-items: center; }
+.quiz-modes { display: flex; flex: 1; }
+.quiz-modes button, #b-quiz-passer, #b-quiz-fin { min-height: 38px; padding: 0 12px; border-radius: 10px; background: var(--fond2); font-size: 13.5px; margin-right: 6px; }
+.quiz-modes button.actif { background: #2b3a4a; color: var(--accent); }
+#b-quiz-fin { background: var(--accent-fonce); color: #fff; margin-right: 0; }
+#quiz-score { margin: 0 14px; font-size: 15px; font-weight: 600; color: var(--accent); }
+#quiz-question { font-size: 18px; font-weight: 600; margin: 12px 4px 4px; min-height: 24px; }
+#quiz-question.bon { color: #51cf66; }
+#quiz-question.faux { color: #ff8787; }
+#quiz-choix { display: flex; flex-wrap: wrap; }
+#quiz-choix button { flex: 1 1 45%; min-height: 44px; margin: 6px 6px 0 0; border-radius: 10px; background: var(--fond2); border: 1px solid var(--bord); font-size: 14.5px; padding: 6px 10px; text-align: left; }
+#quiz-choix button.bon { background: #2b8a3e; border-color: #2b8a3e; color: #fff; }
+#quiz-choix button.faux { background: #c92a2a; border-color: #c92a2a; color: #fff; }
+body.quiz #epluchage, body.quiz #carte { display: none; }

@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="icone-180.png">
 <link rel="icon" href="icone-180.png">
 <title>Anatomie 3D</title>
-<link rel="stylesheet" href="style.css?v=1">
+<link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
 <canvas id="scene"></canvas>
@@ -31,6 +31,8 @@
   <button class="outil" data-panneau="p-couches" title="Couches"><span class="ico">≋</span><span>Couches</span></button>
   <button class="outil" id="b-dessin" title="Dessiner"><span class="ico">✎</span><span>Dessin</span></button>
   <button class="outil" data-panneau="p-recherche" title="Rechercher"><span class="ico">⌕</span><span>Chercher</span></button>
+  <button class="outil" id="b-multi" title="Sélectionner plusieurs structures"><span class="ico">⧉</span><span>Plusieurs</span></button>
+  <button class="outil" id="b-quiz" title="Quiz"><span class="ico">?</span><span>Quiz</span></button>
   <div class="espace"></div>
   <button class="outil" id="b-reinit" title="Tout réinitialiser"><span class="ico">↺</span><span>Accueil</span></button>
   <button class="outil petit" data-panneau="p-infos" title="À propos"><span class="ico">i</span></button>
@@ -54,18 +56,36 @@
     <span class="lib">Éplucher :</span>
     <button data-cote="" class="actif">Les deux côtés</button><button data-cote="D">Côté droit</button><button data-cote="G">Côté gauche</button>
   </div>
-  <h3>Afficher aussi</h3>
+  <h3>Appareil locomoteur</h3>
+  <label class="bascule"><input type="checkbox" id="t-os"><span></span>Squelette</label>
   <label class="bascule"><input type="checkbox" id="t-ligaments"><span></span>Ligaments, disques, ménisques</label>
   <label class="bascule"><input type="checkbox" id="t-capsules"><span></span>Capsules articulaires</label>
   <label class="bascule"><input type="checkbox" id="t-fascias"><span></span>Fascias et aponévroses</label>
-  <label class="bascule"><input type="checkbox" id="t-nerfs"><span></span>Nerfs et moelle</label>
   <label class="bascule"><input type="checkbox" id="t-peau-transp"><span></span>Peau transparente</label>
+  <h3>Systèmes</h3>
+  <label class="bascule"><input type="checkbox" id="t-nerfs"><span></span>Nerfs et moelle spinale</label>
+  <label class="bascule"><input type="checkbox" id="t-encephale"><span></span>Encéphale</label>
+  <label class="bascule"><input type="checkbox" id="t-sens"><span></span>Œil et oreille</label>
+  <label class="bascule"><input type="checkbox" id="t-cardio"><span></span>Cœur et vaisseaux</label>
+  <label class="bascule"><input type="checkbox" id="t-respiratoire"><span></span>Appareil respiratoire</label>
+  <label class="bascule"><input type="checkbox" id="t-digestif"><span></span>Appareil digestif</label>
+  <label class="bascule"><input type="checkbox" id="t-urinaire"><span></span>Appareil urinaire</label>
+  <label class="bascule"><input type="checkbox" id="t-genital"><span></span>Appareil génital (masculin)</label>
+  <label class="bascule"><input type="checkbox" id="t-endocrinien"><span></span>Glandes endocrines</label>
+  <label class="bascule"><input type="checkbox" id="t-lymphatique"><span></span>Système lymphatique</label>
+  <h3>Affichage</h3>
+  <div class="choix-cote" id="choix-langue">
+    <span class="lib">Nom secondaire :</span>
+    <button data-l="" class="actif">Aucun</button><button data-l="la">Latin</button><button data-l="en">Anglais</button>
+  </div>
+  <label class="bascule" style="margin-top:8px"><input type="checkbox" id="t-endoscope"><span></span>Lumière d’endoscope</label>
   <h3>Légende</h3>
   <div class="legende">
     <span><i style="background:#ecdfc8"></i>Os</span><span><i style="background:#9fc3da"></i>Cartilage</span>
     <span><i style="background:#b8473b"></i>Muscle</span><span><i style="background:#eae2cf"></i>Tendon</span>
     <span><i style="background:#c3cdcb"></i>Ligament</span><span><i style="background:#f2c94c"></i>Nerf</span>
-    <span><i style="background:#d9dbea"></i>Fascia</span>
+    <span><i style="background:#d9dbea"></i>Fascia</span><span><i style="background:#c62828"></i>Artère</span>
+    <span><i style="background:#3554a5"></i>Veine</span><span><i style="background:#86b85a"></i>Lymphatique</span>
   </div>
 </section>
 
@@ -79,12 +99,13 @@
 <!-- Panneau Infos -->
 <section class="panneau" id="p-infos">
   <h2>À propos</h2>
-  <p>Atlas d'anatomie 3D pour expliquer au patient. Fonctionne sans connexion une fois chargé.</p>
+  <p>Atlas d'anatomie 3D pour expliquer au patient. Fonctionne sans connexion une fois chargé (les systèmes viscéraux, vasculaire et nerveux central sont téléchargés la première fois qu’on les affiche).</p>
   <h3>Gestes</h3>
   <ul>
     <li>Un doigt : tourner autour du corps</li>
     <li>Deux doigts : pincer pour zoomer, glisser pour déplacer</li>
     <li>Toucher brièvement : nommer une structure</li>
+    <li>« Plusieurs » : toucher plusieurs structures pour les isoler, masquer ou rendre transparentes ensemble</li>
   </ul>
   <h3>Sources et licences</h3>
   <p class="petit">Modèles 3D : <b>Z-Anatomy</b> (Gauthier Kervyn, Lluís Vinent), d'après <b>BodyParts3D</b> © The Database Center for Life Science — licence CC BY-SA 4.0. Les modèles ont été allégés pour cet appareil.</p>
@@ -112,12 +133,14 @@
     <div>
       <div id="carte-type"></div>
       <div id="carte-nom"></div>
+      <div id="carte-nom2"></div>
     </div>
     <button class="fermer" id="b-desel" title="Fermer">×</button>
   </div>
   <div class="carte-actions">
     <button id="b-isoler">Isoler</button>
     <button id="b-masquer">Masquer</button>
+    <button id="b-transp">Transparent</button>
     <button id="b-insertions">Insertions</button>
     <button id="b-fiche">Fiche</button>
   </div>
@@ -144,6 +167,18 @@
   <button id="b-fin-dessin" class="principal">Terminé</button>
 </div>
 
+<!-- Quiz -->
+<div id="barre-quiz" class="cache">
+  <div class="quiz-haut">
+    <div class="quiz-modes"><button data-q="ou" class="actif">Où est… ?</button><button data-q="quoi">Qu’est-ce que c’est ?</button></div>
+    <span id="quiz-score">0 / 0</span>
+    <button id="b-quiz-passer">Passer</button>
+    <button id="b-quiz-fin" class="principal">Terminer</button>
+  </div>
+  <div id="quiz-question"></div>
+  <div id="quiz-choix"></div>
+</div>
+
 <!-- Fiche descriptive -->
 <div id="fiche" class="cache">
   <div class="fiche-tete"><h2 id="fiche-titre"></h2><button class="fermer" id="b-fiche-fermer">×</button></div>
@@ -160,6 +195,6 @@
 
 <script src="vendor/three.min.js"></script>
 <script src="vendor/OrbitControls.js"></script>
-<script src="app.js?v=1"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>

@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
   var DONNEES = 'donnees/';
   var PAQUETS = ['os', 'muscles', 'articulations', 'nerfs', 'peau'];
 
@@ -25,16 +25,39 @@
   PALETTE[12] = [232, 89, 12];  // origine
   PALETTE[13] = [18, 184, 134]; // terminaison
   PALETTE[14] = [245, 230, 168]; // moelle
+  PALETTE[15] = [198, 40, 40];  // artère
+  PALETTE[16] = [53, 84, 165];  // veine
+  PALETTE[17] = [170, 52, 48];  // cœur
+  PALETTE[18] = [226, 150, 150]; // respiratoire
+  PALETTE[19] = [214, 128, 108]; // digestif
+  PALETTE[20] = [128, 46, 40];  // foie, vésicule
+  PALETTE[21] = [196, 120, 80]; // urinaire
+  PALETTE[22] = [214, 146, 156]; // génital
+  PALETTE[23] = [200, 150, 70]; // endocrinien
+  PALETTE[24] = [134, 184, 90]; // lymphatique
+  PALETTE[25] = [226, 196, 186]; // encéphale
+  PALETTE[26] = [236, 236, 236]; // œil
+  PALETTE[27] = [214, 180, 150]; // oreille
+
+  // Systèmes chargés à la demande : couche → paquet
+  var PAQUET_DE = { cardio: 'cardio', respiratoire: 'visceres', digestif: 'visceres', urinaire: 'visceres', genital: 'visceres',
+    endocrinien: 'visceres', lymphatique: 'lymphatique', encephale: 'encephale', sens: 'sens', insertions: 'insertions' };
+  var SYSTEMES = ['nerfs', 'encephale', 'sens', 'cardio', 'respiratoire', 'digestif', 'urinaire', 'genital', 'endocrinien', 'lymphatique'];
+  var BASCULES = ['os', 'ligaments', 'capsules', 'fascias', 'peauTransp'].concat(SYSTEMES);
 
   // ---------- État ----------
   var etat = {
-    niveau: 3, cote: '', ligaments: false, capsules: false, fascias: false, nerfs: false, peauTransp: false,
-    masques: {}, isole: null, sel: null, insertions: false, dessin: false, modeDessin: 'corps', couleur: '#e03131'
+    niveau: 3, cote: '', os: true, ligaments: false, capsules: false, fascias: false, nerfs: false, peauTransp: false,
+    encephale: false, sens: false, cardio: false, respiratoire: false, digestif: false, urinaire: false, genital: false, endocrinien: false, lymphatique: false,
+    masques: {}, isole: null, transp: {}, sel: null, selection: {}, multi: false, insertions: false,
+    dessin: false, modeDessin: 'corps', couleur: '#e03131', langue2: lirePref('langue2', ''), endoscope: false, quiz: null
   };
+  function lirePref(k, d) { try { var v = localStorage.getItem('anatomie3d.' + k); return v === null ? d : v; } catch (e) { return d; } }
+  function ecrirePref(k, v) { try { localStorage.setItem('anatomie3d.' + k, v); } catch (e) {} }
   var M = null;              // manifeste
   var meshes = [];           // par id
   var fiches = null;         // fiches descriptives (chargées en arrière-plan)
-  var insertionsPretes = false, insertionsEnCours = false;
+  var paquetsPrets = {}, paquetsEnCours = {};
   var groupe;                // groupe contenant tout le corps
 
   // ---------- Rendu ----------
@@ -46,7 +69,14 @@
   var scene = new THREE.Scene();
   var camera = new THREE.PerspectiveCamera(32, 1, 2, 3000);
   scene.add(camera);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x3a4250, 0.55));
+  var ciel = new THREE.HemisphereLight(0xffffff, 0x3a4250, 0.55);
+  scene.add(ciel);
+  // lumière d'endoscope : faisceau étroit partant de la caméra
+  var endo = new THREE.SpotLight(0xfff4e0, 0, 0, 0.17, 0.6, 0);
+  endo.position.set(0, 0, 0);
+  camera.add(endo);
+  endo.target.position.set(0, 0, -1);
+  camera.add(endo.target);
   var lampe = new THREE.DirectionalLight(0xffffff, 0.72);
   lampe.position.set(0.35, 0.55, 1);
   camera.add(lampe);
@@ -119,10 +149,15 @@
     capsule: lambert({ transparent: true, opacity: 0.62, depthWrite: false }),
     sel: lambert({ emissive: 0x2b62c9, emissiveIntensity: 0.55 }),
     selTransp: lambert({ emissive: 0x2b62c9, emissiveIntensity: 0.35, transparent: true, opacity: 0.35, depthWrite: false }),
-    ins: lambert({ polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 })
+    ins: lambert({ polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
+    transp: lambert({ transparent: true, opacity: 0.22, depthWrite: false }),
+    bon: lambert({ emissive: 0x2f9e44, emissiveIntensity: 0.7 }),
+    cible: lambert({ emissive: 0xe8590c, emissiveIntensity: 0.65 })
   };
   function materiauPour(p) {
-    if (etat.sel && etat.sel.id === p.id) return etat.insertions ? MAT.selTransp : MAT.sel;
+    if (etat.quiz && etat.quiz.marque && etat.quiz.marque[p.id]) return MAT[etat.quiz.marque[p.id]];
+    if (etat.selection[p.id]) return (etat.insertions || etat.transp[p.id]) ? MAT.selTransp : MAT.sel;
+    if (etat.transp[p.id]) return MAT.transp;
     if (p.couche === 'peau') return etat.peauTransp ? MAT.peauTransp : MAT.peau;
     if (p.couche === 'fascias') return MAT.fascia;
     if (p.couche === 'capsules') return MAT.capsule;
@@ -196,7 +231,7 @@
       groupe.updateMatrix();
       scene.add(groupe);
       // tailles estimées pour la barre de progression
-      M.pieces.forEach(function (p) { if (p.paquet !== 'insertions') tailles[p.paquet] = Math.max(tailles[p.paquet] || 0, p.o + p.ob[0] + p.ob[1] + p.ob[2] + p.ic * (p.u32 ? 4 : 2)); });
+      M.pieces.forEach(function (p) { if (PAQUETS.indexOf(p.paquet) >= 0) tailles[p.paquet] = Math.max(tailles[p.paquet] || 0, p.o + p.ob[0] + p.ob[1] + p.ob[2] + p.ic * (p.u32 ? 4 : 2)); });
       return Promise.all(PAQUETS.map(function (nom) {
         return charger(DONNEES + nom + '.bin?v=' + VERSION, 'arraybuffer', function (l) { recus[nom] = l; maj(); }).then(function (buf) {
           recus[nom] = tailles[nom]; maj();
@@ -208,7 +243,8 @@
       var parPaquet = {};
       res.forEach(function (r) { parPaquet[r.nom] = r.buf; });
       // construction en plusieurs passes pour laisser respirer l'affichage
-      var liste = M.pieces.filter(function (p) { return p.paquet !== 'insertions'; });
+      var liste = M.pieces.filter(function (p) { return PAQUETS.indexOf(p.paquet) >= 0; });
+      PAQUETS.forEach(function (n) { paquetsPrets[n] = true; });
       var i = 0;
       return new Promise(function (ok) {
         (function lot() {
@@ -231,17 +267,24 @@
     });
   }
 
-  function chargerInsertions() {
-    if (insertionsPretes) return Promise.resolve();
-    if (insertionsEnCours) return insertionsEnCours;
-    bulle('Chargement des insertions…', 0);
-    insertionsEnCours = charger(DONNEES + 'insertions.bin?v=' + VERSION, 'arraybuffer').then(function (buf) {
-      M.pieces.forEach(function (p) { if (p.paquet === 'insertions') { construireMesh(p, buf); meshes[p.id].visible = false; } });
-      insertionsPretes = true;
+  var NOMS_PAQUETS = { insertions: 'des insertions', cardio: 'du cœur et des vaisseaux', visceres: 'des viscères', lymphatique: 'du système lymphatique', encephale: 'de l’encéphale', sens: 'de l’œil et de l’oreille' };
+  function chargerPaquet(nom) {
+    if (paquetsPrets[nom]) return Promise.resolve();
+    if (paquetsEnCours[nom]) return paquetsEnCours[nom];
+    bulle('Chargement ' + (NOMS_PAQUETS[nom] || '') + '…', 0);
+    paquetsEnCours[nom] = charger(DONNEES + nom + '.bin?v=' + VERSION, 'arraybuffer').then(function (buf) {
+      M.pieces.forEach(function (p) { if (p.paquet === nom) { construireMesh(p, buf); meshes[p.id].visible = false; } });
+      paquetsPrets[nom] = true;
+      delete paquetsEnCours[nom];
       cacherBulle();
+    }, function (e) {
+      delete paquetsEnCours[nom];
+      bulle('Chargement impossible (connexion ?)', 3000);
+      throw e;
     });
-    return insertionsEnCours;
+    return paquetsEnCours[nom];
   }
+  function chargerInsertions() { return chargerPaquet('insertions'); }
 
   // ---------- Visibilité ----------
   function niveauPour(p) {
@@ -289,12 +332,12 @@
       switch (p.couche) {
         case 'peau': v = etat.niveau === 4; break;
         case 'muscles': v = n === 4 ? tr : (n >= 1 && p.prof <= n); break;
-        case 'os': v = dedans; break;
+        case 'os': v = etat.os && dedans; break;
         case 'ligaments': v = etat.ligaments && dedans; break;
         case 'capsules': v = etat.capsules && dedans; break;
         case 'fascias': v = etat.fascias && dedans; break;
         case 'nerfs': v = etat.nerfs && dedans; break;
-        default: v = true;
+        default: v = !!etat[p.couche] && dedans;
       }
       if (modeIns) {
         if (p.couche === 'muscles' || p.couche === 'fascias' || p.couche === 'peau') v = p.id === sel.id;
@@ -323,23 +366,36 @@
       var p = m.userData.p;
       if (p.couche === 'peau' && etat.peauTransp && !pourDessin) continue;
       if (p.couche === 'insertions' && pourDessin) continue;
+      if (etat.transp[p.id] && !pourDessin) continue;
       cibles.push(m);
     }
     var res = raycaster.intersectObjects(cibles, false);
     return res.length ? res[0] : null;
   }
 
+  function selectionnes() { var l = []; for (var k in etat.selection) l.push(etat.selection[k]); return l; }
+  function rafraichirMateriaux(liste) { liste.forEach(function (q) { if (q && meshes[q.id]) meshes[q.id].material = materiauPour(q); }); }
   function choisir(p) {
-    var ancien = etat.sel;
-    etat.sel = p;
-    if (!p || p.couche !== 'muscles') etat.insertions = false;
-    if (ancien && meshes[ancien.id]) meshes[ancien.id].material = materiauPour(ancien);
-    if (p && meshes[p.id]) meshes[p.id].material = materiauPour(p);
+    var anciens = selectionnes();
+    if (!p) { etat.selection = {}; etat.sel = null; }
+    else if (etat.multi) {
+      if (etat.selection[p.id]) delete etat.selection[p.id]; else etat.selection[p.id] = p;
+      var l = selectionnes(); etat.sel = l.length ? (etat.selection[p.id] ? p : l[l.length - 1]) : null;
+    } else { etat.selection = {}; etat.selection[p.id] = p; etat.sel = p; }
+    if (!etat.sel || etat.sel.couche !== 'muscles' || selectionnes().length > 1) etat.insertions = false;
+    rafraichirMateriaux(anciens); rafraichirMateriaux(selectionnes());
     majCarte();
     majVisibilite();
   }
 
-  var TYPES = { os: 'Os', muscles: 'Muscle', ligaments: 'Ligament', capsules: 'Capsule articulaire', fascias: 'Fascia', nerfs: 'Nerf', peau: 'Peau', insertions: 'Insertion' };
+  var TYPES = { os: 'Os', muscles: 'Muscle', ligaments: 'Ligament', capsules: 'Capsule articulaire', fascias: 'Fascia', nerfs: 'Nerf', peau: 'Peau', insertions: 'Insertion',
+    encephale: 'Encéphale', sens: 'Organe des sens', respiratoire: 'Appareil respiratoire', digestif: 'Appareil digestif', urinaire: 'Appareil urinaire',
+    genital: 'Appareil génital', endocrinien: 'Glande endocrine', lymphatique: 'Système lymphatique' };
+  function nomSecondaire(p) {
+    if (etat.langue2 === 'la') return p.la || '';
+    if (etat.langue2 === 'en') return p.en.replace(/[()]/g, '').replace(/_/g, ' ');
+    return '';
+  }
   function typeDe(p) {
     var en = p.en;
     if (p.couche === 'os') {
@@ -357,6 +413,7 @@
       return 'Ligament';
     }
     if (p.couche === 'nerfs') return /spinal_cord/i.test(en) ? 'Système nerveux central' : 'Nerf';
+    if (p.couche === 'cardio') return /Heart|ventricle|atrium|valve|Cusp/i.test(en) ? 'Cœur' : /vein|Vena|sinus/i.test(en) ? 'Veine' : 'Artère';
     return TYPES[p.couche] || '';
   }
   function libCote(c) { return c === 'D' ? 'côté droit' : c === 'G' ? 'côté gauche' : ''; }
@@ -366,42 +423,69 @@
     var p = etat.sel;
     if (!p) { carte.className = 'cache'; document.getElementById('legende-ins').className = 'cache'; return; }
     carte.className = '';
-    document.getElementById('carte-type').textContent = typeDe(p);
-    var nom = document.getElementById('carte-nom');
-    nom.textContent = p.fr;
-    if (p.cote) { var s = document.createElement('small'); s.textContent = libCote(p.cote); nom.appendChild(s); }
+    var l = selectionnes(), plusieurs = l.length > 1;
+    var nom = document.getElementById('carte-nom'), nom2 = document.getElementById('carte-nom2');
+    if (plusieurs) {
+      document.getElementById('carte-type').textContent = 'Sélection multiple';
+      nom.textContent = l.length + ' structures';
+      var s0 = document.createElement('small');
+      s0.textContent = l.slice(-4).map(function (q) { return q.fr + (q.cote ? ' (' + q.cote + ')' : ''); }).join(' · ') + (l.length > 4 ? ' …' : '');
+      nom.appendChild(s0); nom2.textContent = '';
+    } else {
+      document.getElementById('carte-type').textContent = typeDe(p);
+      nom.textContent = p.fr;
+      if (p.cote) { var s = document.createElement('small'); s.textContent = libCote(p.cote); nom.appendChild(s); }
+      nom2.textContent = nomSecondaire(p);
+    }
+    var tousTransp = l.every(function (q) { return etat.transp[q.id]; });
+    var bT = document.getElementById('b-transp');
+    bT.textContent = tousTransp ? 'Opaque' : 'Transparent';
+    bT.className = tousTransp ? 'actif' : '';
     var bIso = document.getElementById('b-isoler');
     bIso.textContent = etat.isole ? 'Tout montrer' : 'Isoler';
     bIso.className = etat.isole ? 'actif' : '';
     var bIns = document.getElementById('b-insertions');
-    bIns.disabled = p.couche !== 'muscles';
+    bIns.disabled = p.couche !== 'muscles' || plusieurs;
     bIns.className = etat.insertions ? 'actif' : '';
     var bF = document.getElementById('b-fiche');
-    bF.disabled = !(fiches && fiches[p.en]);
+    bF.disabled = plusieurs || !(fiches && fiches[p.en]);
     document.getElementById('legende-ins').className = etat.insertions ? '' : 'cache';
   }
 
   function majEtat() {
     var n = 0; for (var k in etat.masques) if (etat.masques[k]) n++;
+    var nt = 0; for (var k2 in etat.transp) if (etat.transp[k2]) nt++;
     var el = document.getElementById('etat'), t = document.getElementById('etat-texte');
-    if (etat.isole) { el.className = ''; t.textContent = 'Structure isolée'; }
-    else if (n) { el.className = ''; t.textContent = n === 1 ? '1 structure masquée' : n + ' structures masquées'; }
-    else el.className = 'cache';
+    var parts = [];
+    if (etat.isole) parts.push(Object.keys(etat.isole).length > 1 ? 'Structures isolées' : 'Structure isolée');
+    if (n) parts.push(n === 1 ? '1 masquée' : n + ' masquées');
+    if (nt) parts.push(nt === 1 ? '1 transparente' : nt + ' transparentes');
+    if (parts.length) { el.className = ''; t.textContent = parts.join(' · '); } else el.className = 'cache';
   }
 
   document.getElementById('b-desel').onclick = function () { choisir(null); };
   document.getElementById('b-isoler').onclick = function () {
     if (!etat.sel) return;
     if (etat.isole) etat.isole = null;
-    else { etat.isole = {}; etat.isole[etat.sel.id] = true; volerVers(etat.sel); }
+    else {
+      etat.isole = {};
+      var l = selectionnes();
+      l.forEach(function (q) { etat.isole[q.id] = true; });
+      if (l.length === 1) volerVers(l[0]);
+    }
     majCarte(); majVisibilite();
   };
   document.getElementById('b-masquer').onclick = function () {
     if (!etat.sel) return;
-    var p = etat.sel;
-    etat.masques[p.id] = true;
-    if (etat.isole) delete etat.isole[p.id];
+    selectionnes().forEach(function (p) { etat.masques[p.id] = true; if (etat.isole) delete etat.isole[p.id]; });
     choisir(null);
+  };
+  document.getElementById('b-transp').onclick = function () {
+    var l = selectionnes(); if (!l.length) return;
+    var tous = l.every(function (q) { return etat.transp[q.id]; });
+    l.forEach(function (q) { if (tous) delete etat.transp[q.id]; else etat.transp[q.id] = true; });
+    if (!tous) { choisir(null); return; }
+    rafraichirMateriaux(l); majCarte(); majVisibilite();
   };
   document.getElementById('b-insertions').onclick = function () {
     var p = etat.sel; if (!p || p.couche !== 'muscles') return;
@@ -415,7 +499,11 @@
       if (!trouve) bulle('Pas de zone d’insertion dessinée pour ce muscle.', 2600);
     });
   };
-  document.getElementById('b-etat').onclick = function () { etat.isole = null; etat.masques = {}; majCarte(); majVisibilite(); };
+  document.getElementById('b-etat').onclick = function () {
+    var anciens = []; for (var k in etat.transp) anciens.push(M.pieces[k]);
+    etat.isole = null; etat.masques = {}; etat.transp = {};
+    rafraichirMateriaux(anciens); majCarte(); majVisibilite();
+  };
 
   // ---------- Fiche ----------
   var ficheEl = document.getElementById('fiche');
@@ -425,7 +513,17 @@
     document.getElementById('fiche-titre').textContent = p.fr;
     var corps = document.getElementById('fiche-corps');
     corps.innerHTML = '';
-    f.texte.split(/\n{2,}/).forEach(function (bloc) {
+    var n2 = nomSecondaire(p) || p.la;
+    if (n2) { var la = document.createElement('p'); la.style.fontStyle = 'italic'; la.style.color = '#9aa6b2'; la.textContent = n2; corps.appendChild(la); }
+    if (f.muscle) {
+      var enc = document.createElement('div'); enc.className = 'encadre';
+      [['Origine', f.muscle.o], ['Terminaison', f.muscle.t], ['Innervation', f.muscle.i], ['Action', f.muscle.a]].forEach(function (r) {
+        var h = document.createElement('h3'); h.textContent = r[0]; enc.appendChild(h);
+        var t = document.createElement('p'); t.textContent = r[1]; enc.appendChild(t);
+      });
+      corps.appendChild(enc);
+    }
+    (f.texte || '').split(/\n{2,}/).forEach(function (bloc) {
       bloc = bloc.trim(); if (!bloc) return;
       var mt = bloc.match(/^==+\s*(.+?)\s*==+$/);
       var el;
@@ -435,7 +533,7 @@
     });
     var src = document.createElement('p');
     src.className = 'source';
-    src.textContent = 'Source : Z-Anatomy / Wikipédia (CC BY-SA)' + (f.source ? ' — ' + decodeURIComponent(f.source.replace(/^https?:\/\//, '')) : '');
+    src.textContent = (f.muscle ? 'Encadré : rédaction propre à l’application. ' : '') + (f.texte ? 'Description : Z-Anatomy / Wikipédia (CC BY-SA)' + (f.source ? ' — ' + decodeURIComponent(f.source.replace(/^https?:\/\//, '')) : '') : '');
     corps.appendChild(src);
     corps.scrollTop = 0;
     ficheEl.className = '';
@@ -563,8 +661,8 @@
     if (!nom) return;
     l.push({
       nom: nom, cam: camera.position.toArray(), cible: controls.target.toArray(),
-      niveau: etat.niveau, cote: etat.cote, ligaments: etat.ligaments, capsules: etat.capsules, fascias: etat.fascias,
-      nerfs: etat.nerfs, peauTransp: etat.peauTransp, masques: Object.keys(etat.masques), isole: etat.isole ? Object.keys(etat.isole) : null
+      niveau: etat.niveau, cote: etat.cote, bascules: BASCULES.filter(function (b) { return etat[b]; }),
+      masques: Object.keys(etat.masques), isole: etat.isole ? Object.keys(etat.isole) : null, transp: Object.keys(etat.transp)
     });
     if (ecrireVues(l)) { afficherMesVues(); bulle('Vue « ' + nom + ' » mémorisée.', 1800); }
     else bulle('Impossible d’enregistrer sur cet appareil.', 2500);
@@ -572,11 +670,16 @@
   function appliquerVue(v) {
     choisir(null);
     etat.niveau = v.niveau; etat.cote = v.cote || '';
-    etat.ligaments = !!v.ligaments; etat.capsules = !!v.capsules; etat.fascias = !!v.fascias; etat.nerfs = !!v.nerfs; etat.peauTransp = !!v.peauTransp;
+    var anciensT = []; for (var k in etat.transp) anciensT.push(M.pieces[k]);
+    if (v.bascules) BASCULES.forEach(function (b) { etat[b] = v.bascules.indexOf(b) >= 0; });
+    else { etat.os = true; ['ligaments', 'capsules', 'fascias', 'nerfs', 'peauTransp'].forEach(function (b) { etat[b] = !!v[b]; }); }
+    etat.transp = {}; (v.transp || []).forEach(function (id) { etat.transp[id] = true; });
     etat.masques = {}; (v.masques || []).forEach(function (id) { etat.masques[id] = true; });
     etat.isole = null; if (v.isole) { etat.isole = {}; v.isole.forEach(function (id) { etat.isole[id] = true; }); }
     synchroniserCommandes();
     if (meshes[peauId()]) meshes[peauId()].material = materiauPour(M.pieces[peauId()]);
+    rafraichirMateriaux(anciensT); rafraichirMateriaux((v.transp || []).map(function (id) { return M.pieces[id]; }));
+    chargerSystemesActifs();
     majVisibilite();
     animerCamera(new THREE.Vector3().fromArray(v.cible), new THREE.Vector3().fromArray(v.cam));
   }
@@ -588,11 +691,16 @@
     for (var i = 0; i < crans.length; i++) crans[i].className = (+crans[i].getAttribute('data-n') === etat.niveau) ? 'actif' : '';
     var cb = document.querySelectorAll('#cote-epluche button');
     for (var j = 0; j < cb.length; j++) cb[j].className = cb[j].getAttribute('data-cote') === etat.cote ? 'actif' : '';
-    document.getElementById('t-ligaments').checked = etat.ligaments;
-    document.getElementById('t-capsules').checked = etat.capsules;
-    document.getElementById('t-fascias').checked = etat.fascias;
-    document.getElementById('t-nerfs').checked = etat.nerfs;
-    document.getElementById('t-peau-transp').checked = etat.peauTransp;
+    BASCULES.forEach(function (b) { document.getElementById(idBascule(b)).checked = !!etat[b]; });
+    var cl = document.querySelectorAll('#choix-langue button');
+    for (var k = 0; k < cl.length; k++) cl[k].className = cl[k].getAttribute('data-l') === etat.langue2 ? 'actif' : '';
+    document.getElementById('t-endoscope').checked = etat.endoscope;
+  }
+  function idBascule(b) { return b === 'peauTransp' ? 't-peau-transp' : 't-' + b; }
+  function chargerSystemesActifs() {
+    SYSTEMES.forEach(function (c) {
+      if (etat[c] && PAQUET_DE[c] && !paquetsPrets[PAQUET_DE[c]]) chargerPaquet(PAQUET_DE[c]).then(majVisibilite, function () { etat[c] = false; synchroniserCommandes(); });
+    });
   }
   for (var ci = 0; ci < crans.length; ci++) {
     crans[ci].onclick = function () {
@@ -612,13 +720,25 @@
   for (var cj = 0; cj < cbs.length; cj++) {
     cbs[cj].onclick = function () { etat.cote = this.getAttribute('data-cote'); synchroniserCommandes(); majVisibilite(); };
   }
-  [['t-ligaments', 'ligaments'], ['t-capsules', 'capsules'], ['t-fascias', 'fascias'], ['t-nerfs', 'nerfs'], ['t-peau-transp', 'peauTransp']].forEach(function (b) {
-    document.getElementById(b[0]).onchange = function () {
-      etat[b[1]] = this.checked;
-      if (b[1] === 'peauTransp') { var id = peauId(); if (meshes[id]) meshes[id].material = materiauPour(M.pieces[id]); }
+  BASCULES.forEach(function (b) {
+    document.getElementById(idBascule(b)).onchange = function () {
+      etat[b] = this.checked;
+      if (b === 'peauTransp') { var id = peauId(); if (meshes[id]) meshes[id].material = materiauPour(M.pieces[id]); }
+      if (etat[b] && etat.niveau === 4 && b !== 'peauTransp' && b !== 'os') { etat.niveau = 3; synchroniserCommandes(); }
+      chargerSystemesActifs();
       majVisibilite();
     };
   });
+  var cls2 = document.querySelectorAll('#choix-langue button');
+  for (var cl3 = 0; cl3 < cls2.length; cl3++) {
+    cls2[cl3].onclick = function () { etat.langue2 = this.getAttribute('data-l'); ecrirePref('langue2', etat.langue2); synchroniserCommandes(); majCarte(); };
+  }
+  function appliquerLumiere() {
+    if (etat.endoscope) { ciel.intensity = 0.06; lampe.intensity = 0.05; contre.intensity = 0; endo.intensity = 1.6; }
+    else { ciel.intensity = 0.55; lampe.intensity = 0.72; contre.intensity = 0.18; endo.intensity = 0; }
+    demanderRendu();
+  }
+  document.getElementById('t-endoscope').onchange = function () { etat.endoscope = this.checked; appliquerLumiere(); };
 
   // ---------- Panneaux ----------
   var boutonsPanneau = document.querySelectorAll('[data-panneau]');
@@ -636,6 +756,7 @@
       var ouvert = el.className.indexOf('ouvert') >= 0;
       fermerPanneaux();
       if (etat.dessin) finDessin();
+      if (etat.quiz && id !== 'p-vues' && id !== 'p-couches') finQuiz();
       if (!ouvert) {
         el.className = 'panneau ouvert'; this.className += ' actif'; document.body.className += ' panneau-ouvert';
         if (id === 'p-recherche') setTimeout(function () { document.getElementById('champ-recherche').focus(); }, 250);
@@ -646,8 +767,14 @@
   document.getElementById('b-reinit').onclick = function () {
     fermerPanneaux(); if (etat.dessin) finDessin();
     choisir(null);
-    etat.niveau = 3; etat.cote = ''; etat.ligaments = etat.capsules = etat.fascias = etat.nerfs = etat.peauTransp = false;
-    etat.masques = {}; etat.isole = null;
+    if (etat.quiz) finQuiz();
+    if (etat.multi) basculerMulti();
+    etat.niveau = 3; etat.cote = '';
+    BASCULES.forEach(function (b) { etat[b] = b === 'os'; });
+    var anciensT = []; for (var k in etat.transp) anciensT.push(M.pieces[k]);
+    etat.masques = {}; etat.isole = null; etat.transp = {};
+    rafraichirMateriaux(anciensT);
+    etat.endoscope = false; appliquerLumiere();
     var id = peauId(); if (meshes[id]) meshes[id].material = materiauPour(M.pieces[id]);
     effacerTout();
     ficheEl.className = 'cache';
@@ -656,14 +783,14 @@
 
   // ---------- Recherche ----------
   var indexRecherche = [];
-  function sansAccents(s) { return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
+  function sansAccents(s) { return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
   function construireIndexRecherche() {
     var vus = {};
     M.pieces.forEach(function (p) {
       if (p.couche === 'insertions') return;
       var cle = p.en + '|' + p.cote;
       if (vus[cle]) return; vus[cle] = true;
-      indexRecherche.push({ p: p, txt: sansAccents(p.fr + ' ' + p.en.replace(/_/g, ' ')) });
+      indexRecherche.push({ p: p, txt: sansAccents(p.fr + ' ' + p.en.replace(/_/g, ' ') + ' ' + (p.la || '')) });
     });
     indexRecherche.sort(function (a, b) { return a.p.fr.localeCompare(b.p.fr, 'fr') || a.p.cote.localeCompare(b.p.cote); });
   }
@@ -691,7 +818,7 @@
       (function (p) {
         var b = document.createElement('button');
         b.textContent = p.fr;
-        var s = document.createElement('small'); s.textContent = typeDe(p) + (p.cote ? ' · ' + libCote(p.cote) : '');
+        var s = document.createElement('small'); s.textContent = typeDe(p) + (p.cote ? ' · ' + libCote(p.cote) : '') + (nomSecondaire(p) ? ' · ' + nomSecondaire(p) : '');
         b.appendChild(s);
         b.onclick = function () { allerA(p); };
         res.appendChild(b);
@@ -709,10 +836,18 @@
     if (p.couche === 'capsules') etat.capsules = true;
     if (p.couche === 'fascias') etat.fascias = true;
     if (p.couche === 'nerfs') etat.nerfs = true;
+    if (p.couche === 'os') etat.os = true;
+    if (SYSTEMES.indexOf(p.couche) >= 0) { etat[p.couche] = true; if (etat.niveau === 4) etat.niveau = 0; }
+    if (p.couche === 'encephale' || p.couche === 'sens') etat.os = false;
+    if (etat.transp[p.id]) { delete etat.transp[p.id]; }
     synchroniserCommandes();
     fermerPanneaux();
-    choisir(p);
-    volerVers(p);
+    var pq = PAQUET_DE[p.couche];
+    (pq ? chargerPaquet(pq) : Promise.resolve()).then(function () {
+      if (etat.multi) basculerMulti();
+      choisir(p);
+      volerVers(p);
+    });
   }
 
   // ---------- Gestes : toucher pour nommer ----------
@@ -740,11 +875,128 @@
   function toucher(x, y) {
     if (document.querySelector('.panneau.ouvert')) { fermerPanneaux(); return; }
     var h = viser(x, y, false);
-    if (!h) { if (etat.sel) choisir(null); return; }
+    if (etat.quiz) { reponseQuiz(h ? h.object.userData.p : null); return; }
+    if (!h) { if (etat.sel && !etat.multi) choisir(null); return; }
     var p = h.object.userData.p;
     if (p.couche === 'insertions') { bulle((p.type === 'o' ? 'Origine' : 'Terminaison') + ' — ' + etat.sel.fr, 1800); return; }
-    if (etat.sel && etat.sel.id === p.id) return;
+    if (!etat.multi && etat.sel && etat.sel.id === p.id) return;
     choisir(p);
+  }
+
+  // ---------- Sélection multiple ----------
+  function basculerMulti() {
+    etat.multi = !etat.multi;
+    document.getElementById('b-multi').className = 'outil' + (etat.multi ? ' actif' : '');
+    if (etat.multi) bulle('Touchez plusieurs structures, puis utilisez Isoler, Masquer ou Transparent.', 2800);
+    else if (selectionnes().length > 1) choisir(etat.sel);
+  }
+  document.getElementById('b-multi').onclick = function () { fermerPanneaux(); if (etat.quiz) finQuiz(); basculerMulti(); };
+
+  // ---------- Quiz ----------
+  function candidatsQuiz() {
+    var w = window.innerWidth, h = window.innerHeight, v = new THREE.Vector3(), vus = {}, l = [];
+    for (var i = 0; i < meshes.length; i++) {
+      var m = meshes[i]; if (!m || !m.visible) continue;
+      var p = m.userData.p;
+      if (p.couche === 'peau' || p.couche === 'insertions' || etat.transp[p.id] || p.r < 2.5) continue;
+      v.set(p.c[0], p.c[1], p.c[2]).project(camera);
+      if (v.z > 1 || Math.abs(v.x) > 0.85 || v.y > 0.8 || v.y < -0.4) continue;
+      var x = (v.x + 1) / 2 * w; if (x < 90) continue;
+      var cle = p.fr + '|' + p.cote; if (vus[cle]) continue; vus[cle] = true;
+      l.push(p);
+    }
+    return l;
+  }
+  // tire une structure réellement visible (non cachée derrière une autre) : rayon depuis l'écran vers son centre
+  function cibleVisible(l, precedente) {
+    var w = window.innerWidth, h = window.innerHeight, v = new THREE.Vector3();
+    var copie = l.slice();
+    for (var essai = 0; essai < 30 && copie.length; essai++) {
+      var p = copie.splice(Math.floor(Math.random() * copie.length), 1)[0];
+      if (precedente && p.id === precedente.id) continue;
+      v.set(p.c[0], p.c[1], p.c[2]).project(camera);
+      var hit = viser((v.x + 1) / 2 * w, (1 - v.y) / 2 * h, false);
+      if (hit && hit.object.userData.p.fr === p.fr && hit.object.userData.p.cote === p.cote) return hit.object.userData.p;
+    }
+    return null;
+  }
+  function nomQuiz(p) { return p.fr + (p.cote ? ' (' + libCote(p.cote) + ')' : ''); }
+  function marquer(p, mat) {
+    var q = etat.quiz; if (!q) return;
+    var anciens = []; for (var k in q.marque) anciens.push(M.pieces[k]);
+    q.marque = {}; if (p) q.marque[p.id] = mat;
+    rafraichirMateriaux(anciens); if (p) rafraichirMateriaux([p]); demanderRendu();
+  }
+  function questionSuivante() {
+    var q = etat.quiz; if (!q) return;
+    marquer(null);
+    var qEl = document.getElementById('quiz-question'), cEl = document.getElementById('quiz-choix');
+    qEl.className = ''; cEl.innerHTML = '';
+    var l = candidatsQuiz();
+    var cible = l.length >= 4 ? cibleVisible(l, q.cible) : null;
+    if (!cible) { qEl.textContent = 'Rapprochez-vous ou affichez plus de structures pour jouer.'; q.cible = null; return; }
+    q.cible = cible; q.repondu = false;
+    document.getElementById('quiz-score').textContent = q.bons + ' / ' + q.total;
+    if (q.mode === 'ou') { qEl.textContent = 'Touchez : ' + nomQuiz(cible); return; }
+    marquer(cible, 'cible');
+    qEl.textContent = 'Quelle est la structure en orange ?';
+    var choix = [cible];
+    var autres = l.filter(function (p) { return p.fr !== cible.fr; });
+    while (choix.length < 4 && autres.length) choix.push(autres.splice(Math.floor(Math.random() * autres.length), 1)[0]);
+    choix.sort(function () { return Math.random() - 0.5; });
+    choix.forEach(function (p) {
+      var b = document.createElement('button'); b.textContent = nomQuiz(p);
+      b.onclick = function () {
+        if (q.repondu) return; q.repondu = true; q.total++;
+        var ok = p.fr === cible.fr && p.cote === cible.cote;
+        if (ok) q.bons++;
+        b.className = ok ? 'bon' : 'faux';
+        var bs = cEl.querySelectorAll('button');
+        for (var i = 0; i < bs.length; i++) if (bs[i].textContent === nomQuiz(cible)) bs[i].className = 'bon';
+        qEl.className = ok ? 'bon' : 'faux'; qEl.textContent = ok ? 'Bonne réponse !' : 'C’était : ' + nomQuiz(cible);
+        document.getElementById('quiz-score').textContent = q.bons + ' / ' + q.total;
+        setTimeout(questionSuivante, ok ? 1100 : 2200);
+      };
+      cEl.appendChild(b);
+    });
+  }
+  function reponseQuiz(p) {
+    var q = etat.quiz; if (!q || q.mode !== 'ou' || !q.cible || q.repondu) return;
+    if (!p || p.couche === 'insertions') return;
+    q.repondu = true; q.total++;
+    var ok = p.fr === q.cible.fr && p.cote === q.cible.cote;
+    var qEl = document.getElementById('quiz-question');
+    if (ok) { q.bons++; marquer(p, 'bon'); qEl.className = 'bon'; qEl.textContent = 'Bravo : ' + nomQuiz(p); }
+    else { marquer(q.cible, 'cible'); qEl.className = 'faux'; qEl.textContent = 'Non, c’est : ' + nomQuiz(p) + ' — la bonne réponse est en orange.'; }
+    document.getElementById('quiz-score').textContent = q.bons + ' / ' + q.total;
+    setTimeout(questionSuivante, ok ? 1100 : 2600);
+  }
+  function debutQuiz() {
+    fermerPanneaux(); if (etat.dessin) finDessin(); if (etat.multi) basculerMulti();
+    choisir(null);
+    etat.quiz = { mode: etat.quiz ? etat.quiz.mode : 'ou', bons: 0, total: 0, cible: null, marque: {} };
+    document.getElementById('b-quiz').className = 'outil actif';
+    document.getElementById('barre-quiz').className = '';
+    document.body.className += ' quiz';
+    questionSuivante();
+  }
+  function finQuiz() {
+    marquer(null);
+    etat.quiz = null;
+    document.getElementById('b-quiz').className = 'outil';
+    document.getElementById('barre-quiz').className = 'cache';
+    document.body.className = document.body.className.replace(' quiz', '');
+  }
+  document.getElementById('b-quiz').onclick = function () { if (etat.quiz) finQuiz(); else debutQuiz(); };
+  document.getElementById('b-quiz-fin').onclick = finQuiz;
+  document.getElementById('b-quiz-passer').onclick = function () { if (etat.quiz && etat.quiz.cible && !etat.quiz.repondu) etat.quiz.total++; questionSuivante(); };
+  var modesQ = document.querySelectorAll('.quiz-modes button');
+  for (var mq = 0; mq < modesQ.length; mq++) {
+    modesQ[mq].onclick = function () {
+      for (var k = 0; k < modesQ.length; k++) modesQ[k].className = '';
+      this.className = 'actif';
+      if (etat.quiz) { etat.quiz.mode = this.getAttribute('data-q'); questionSuivante(); }
+    };
   }
 
   // ---------- Bulle d'information ----------
@@ -796,7 +1048,7 @@
     document.getElementById('b-mode-trait').className = 'mode' + (corps ? ' actif' : '');
     document.getElementById('b-mode-ecran').className = 'mode' + (corps ? '' : ' actif');
   }
-  document.getElementById('b-dessin').onclick = function () { if (etat.dessin) finDessin(); else debutDessin(); };
+  document.getElementById('b-dessin').onclick = function () { if (etat.quiz) finQuiz(); if (etat.dessin) finDessin(); else debutDessin(); };
   document.getElementById('b-fin-dessin').onclick = finDessin;
   document.getElementById('b-mode-trait').onclick = function () { etat.modeDessin = 'corps'; appliquerModeDessin(); };
   document.getElementById('b-mode-ecran').onclick = function () {

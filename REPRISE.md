@@ -12,7 +12,9 @@ S'ouvre en plein écran depuis l'écran d'accueil et fonctionne hors connexion a
 - `outils/` : chaîne de conversion (Node).
   - `construire.mjs` : lit les FBX Z-Anatomy, sélectionne, allège (meshoptimizer), quantifie, écrit `docs/donnees/`.
   - `couches.mjs` : classement des muscles en plans superficiel (3) / moyen (2) / profond (1).
-  - `fr.mjs` : noms français (dictionnaire + règles + titres des fiches Z-Anatomy).
+  - `fr.mjs` : noms français (dictionnaire + règles + terminologie TA2 + titres des fiches Z-Anatomy).
+  - `ta2.mjs` : Terminologia Anatomica 2 (anglais → latin, français), fichier `sources-za/TA2.csv`.
+  - `descriptions-muscles.mjs` : fiche courte de chaque muscle (origine, terminaison, innervation, action), rédaction propre à faire relire.
   - `test-ecran.mjs` : tests visuels avec Chrome sans fenêtre (`node test-ecran.mjs shot:nom` → capture dans le dossier temporaire).
   - `icone.mjs` : génère l'icône 180 px.
 - `sources-za/`, `sources-bp3d/` : données brutes téléchargées (non versionnées, ~600 Mo).
@@ -40,6 +42,16 @@ Taux d'allègement par couche : constante `RATIO` dans `construire.mjs`.
 - Pas d'événements `pointer` sur iOS 12 : les gestes passent par `touchstart/touchmove/touchend`.
 - CSS : pas de `gap` en flexbox (marges à la place), pas de `inset`, pas d'`aspect-ratio`.
 - three.js : ne pas dépasser r128 sans vérifier la syntaxe du fichier compilé.
+
+## Paquets de données
+- Chargés au démarrage : os, muscles, articulations, nerfs, peau.
+- Chargés à la demande (bascule « Systèmes » ou recherche) : insertions, cardio, visceres (respiratoire, digestif, urinaire, génital, endocrinien), lymphatique, encephale, sens (œil, oreille).
+- Le service worker met tout en cache dès l'installation (≈ 15 Mo) pour le hors connexion complet.
+
+## Fonctions (v1.1.0, alignées sur « Anatomie – Atlas 3D » de Catfish Animation Studio)
+Couches à éplucher, systèmes, toucher pour nommer, sélection multiple, isoler / masquer / transparent, recherche (français, latin, anglais),
+fiches muscles + descriptions, vues mémorisées, nom secondaire (latin / anglais), lumière d'endoscope, dessin, quiz (« Où est… ? », « Qu'est-ce que c'est ? »).
+Non reproductible : la réalité augmentée (pas d'ARKit ni de WebXR dans Safari 12). Pas de modèle génital féminin dans Z-Anatomy.
 
 ## Repères du modèle
 - Unités : cm ; Y vers le haut (pieds à 0, tête à ~171) ; avant du corps vers +Z ; côté gauche du patient vers +X.

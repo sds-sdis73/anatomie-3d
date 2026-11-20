@@ -1,5 +1,6 @@
 // Noms français des structures (nomenclature anatomique française usuelle).
 import fs from 'fs';
+import { ta2 } from './ta2.mjs';
 
 const ORD = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7, eighth: 8, ninth: 9, tenth: 10, eleventh: 11, twelfth: 12 };
 const ordFr = n => (n === 1 ? '1re' : n + 'e');
@@ -210,6 +211,27 @@ const DICO = {
 DICO.Iliocostalis_colli_muscler = DICO.Iliocostalis_colli_muscle;
 DICO['Intra-articular_ligament_of_head_of_ribr'] = DICO['Intra-articular_ligament_of_head_of_rib'];
 
+
+Object.assign(DICO, {
+  Middle_genicular_artery: 'Artère moyenne du genou', Proximal_lateral_striate_branches: 'Artères striées latérales proximales', Distal_lateral_striate_branches: 'Artères striées latérales distales',
+  'Insular_branches_of_middle_cerebral_artery_(M2)': 'Artère cérébrale moyenne (segment insulaire M2)', 'Insular_branches_of_middle_cerebral_artery_(M2-segment)': 'Artère cérébrale moyenne (segment insulaire M2)',
+  Anterior_temporal_branch: 'Branche temporale antérieure', Artery_of_precentral_sulcus: 'Artère du sillon précentral', 'Middle_cerebral_artery_(M3-segment)': 'Artère cérébrale moyenne (segment M3)',
+  'Middle_cerebral_artery_(M3_segment)': 'Artère cérébrale moyenne (segment M3)', Artery_of_central_sulcus: 'Artère du sillon central', 'Temporo-occipital_branch': 'Branche temporo-occipitale',
+  Branch_to_angular_gyrus: 'Branche du gyrus angulaire', Posterior_parietal_artery: 'Artère pariétale postérieure', Posterior_temporal_branch: 'Branche temporale postérieure', Prefrontal_artery: 'Artère préfrontale',
+  Lateral_frontobasal_artery: 'Artère fronto-basale latérale', Right_testicular_artery: 'Artère testiculaire droite', Descending_branch_of_lateral_circumflex_femoral_artery: "Branche descendante de l'artère circonflexe latérale de la cuisse",
+  "Inferior_vein_of_left_ventricle_(Posterior_'')": 'Veine postérieure du ventricule gauche', Intermediate_bronchus: 'Bronche intermédiaire', Middle_lobar_bronchus: 'Bronche lobaire moyenne',
+  'Inferior_occipital_gyrus_and_sulcus*': 'Gyrus et sillon occipitaux inférieurs', 'Lateral_occipital_gyrus_(Middle_occipital_gyrus*)': 'Gyrus occipital moyen', Lat_Fis_ant_Horizont: 'Sillon latéral (branche antérieure horizontale)',
+  'Lat_Fis-ant-Horizont': 'Sillon latéral (branche antérieure horizontale)', 'Lat_Fis-ant-Vertical': 'Sillon latéral (branche antérieure verticale)', 'Lat_Fis-post': 'Sillon latéral (branche postérieure)',
+  'Orbital_sulci_(H-shaped_orbital_sulci*)': 'Sillons orbitaires (en H)', 'Orbital_sulci_(Lateral_Orbital_sulcus*)': 'Sillon orbitaire latéral', 'Paracentral_gyrus_and_sulcus*': 'Lobule paracentral',
+  'Precentral_sulcus_(inferior_part)*': 'Sillon précentral (partie inférieure)', 'Precentral_sulcus_(Superior_part)*': 'Sillon précentral (partie supérieure)', 'Transverse_frontopolar_gyrus_and_sulcus*': 'Gyrus et sillons fronto-polaires transverses',
+  'Straight_gyrus_(Gyrus_rectus)': 'Gyrus droit', 'Orbital_gyri_(Frontomarginal_gyrus_and_sulcus*)': 'Gyrus fronto-marginal', 'Occipitotemporal_sulcus_(Lateral_part*)': 'Sillon occipito-temporal',
+  'Medial_occipitotemporal_gyrus_(Parahippocampal*)': 'Gyrus parahippocampique', 'Superior_temporal_gyrus_(Lateral_part)': 'Gyrus temporal supérieur (partie latérale)',
+  'Cingulate_gyrus_and_sulcus_(Middle_posterior_part)': 'Gyrus cingulaire (partie moyenne postérieure)', 'Cingulate_gyrus_(Posteroventral_part*)': 'Gyrus cingulaire (partie postéro-ventrale)',
+  'Cingulate_gyrus_and_sulcus_(Posterior_dorsal_part)': 'Gyrus cingulaire (partie postéro-dorsale)', 'Cingulate_gyrus_and_sulcus_(Middle_anterior_part)': 'Gyrus cingulaire (partie moyenne antérieure)',
+  'Cingulate_sulcus_(Marginal_part*)': 'Sillon cingulaire (partie marginale)', _Posterior_transverse_collateral_sulcus: 'Sillon collatéral transverse postérieur', 'Anterior_occipital_sulcus*': 'Sillon occipital antérieur',
+  'Sulcus_interm_prim-Jensen': 'Sillon intermédiaire (de Jensen)', 'Insula_(Subcentral_gyrus_and_ant_and_post_sulci*)': 'Insula (gyrus subcentral)',
+});
+
 const DENTS = { incisor: 'incisive', canine: 'canine', premolar: 'prémolaire', molar_tooth: 'molaire', molar: 'molaire' };
 
 function regles(b) {
@@ -257,8 +279,10 @@ export function fiche(base) {
 }
 
 export function nomFr(base) {
+  if (/[lr]$/.test(base) && !DICO[base] && !regles(base) && !ta2(base) && !fiche(base)) { const r0 = nomFr(base.slice(0, -1)); if (r0) return r0; }
   if (DICO[base]) return DICO[base];
   const r = regles(base); if (r) return r;
+  const t = ta2(base); if (t && t.fr) return t.fr.charAt(0).toUpperCase() + t.fr.slice(1);
   const f = fiche(base); if (f) return f.titre;
   return null;
 }
