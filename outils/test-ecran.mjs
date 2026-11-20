@@ -18,6 +18,7 @@ for (const a of actions) {
   else if (a.startsWith('eval:')) { console.log('eval →', await page.evaluate(a.slice(5))); await new Promise(r => setTimeout(r, 900)); }
   else if (a.startsWith('type:')) { const [sel, ...t] = a.slice(5).split('|'); await page.type(sel, t.join('|'), { delay: 20 }); await new Promise(r => setTimeout(r, 600)); }
   else if (a.startsWith('drag:')) { const pts = a.slice(5).split(';').map(q => q.split(',').map(Number)); await page.mouse.move(pts[0][0], pts[0][1]); await page.mouse.down(); for (const q of pts.slice(1)) await page.mouse.move(q[0], q[1], { steps: 12 }); await page.mouse.up(); await new Promise(r => setTimeout(r, 500)); }
+  else if (a.startsWith('wheel:')) { const [x, y, dy, n] = a.slice(6).split(',').map(Number); await page.mouse.move(x, y); for (let i = 0; i < (n || 1); i++) { await page.mouse.wheel({ deltaY: dy }); await new Promise(r => setTimeout(r, 60)); } await new Promise(r => setTimeout(r, 500)); }
   else if (a.startsWith('shot:')) { await page.screenshot({ path: '/private/tmp/claude-501/-Users-toutoune/68c0657a-a497-4668-b217-4407c452d422/scratchpad/' + a.slice(5) + '.png' }); n++; }
 }
 console.log(erreurs.length ? erreurs.join('\n') : 'aucune erreur console');

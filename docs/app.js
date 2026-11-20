@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  var VERSION = '1.1.0';
+  var VERSION = '1.1.1';
   var DONNEES = 'donnees/';
   var PAQUETS = ['os', 'muscles', 'articulations', 'nerfs', 'peau'];
 
@@ -95,6 +95,58 @@
   controls.minDistance = 6;
   controls.maxDistance = 520;
   controls.enableKeys = false;
+  // Zoom vers le point visé (molette ou pincement) : on remplace le zoom de three.js r128, qui vise toujours le centre.
+  controls.enableZoom = false;
+  controls.touches.TWO = THREE.TOUCH.PAN;
+  var plan = new THREE.Plane(), pointZoom = new THREE.Vector3(), dirVue = new THREE.Vector3();
+  function pointSous(x, y) {
+    var h = viser(x, y, false);
+    if (h) return h.point.clone();
+    // rien sous le doigt : plan passant par le centre de rotation, face à la caméra
+    camera.getWorldDirection(dirVue);
+    plan.setFromNormalAndCoplanarPoint(dirVue, controls.target);
+    return raycaster.ray.intersectPlane(plan, pointZoom) ? pointZoom.clone() : controls.target.clone();
+  }
+  function zoomerVers(p, facteur) {
+    var dist = camera.position.distanceTo(controls.target) * facteur;
+    if (dist < controls.minDistance || dist > controls.maxDistance) {
+      facteur = Math.min(Math.max(dist, controls.minDistance), controls.maxDistance) / camera.position.distanceTo(controls.target);
+    }
+    camera.position.sub(p).multiplyScalar(facteur).add(p);
+    controls.target.sub(p).multiplyScalar(facteur).add(p);
+    anim = null;
+    controls.update();
+    effacerEcranSiBesoin();
+  }
+  canvas.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    var d = e.deltaMode === 1 ? e.deltaY * 30 : e.deltaY;
+    zoomerVers(pointSous(e.clientX, e.clientY), Math.exp(Math.max(-300, Math.min(300, d)) * 0.0018));
+  }, { passive: false });
+  var pince = null;
+  function ecartDoigts(e) { var a = e.touches[0], b = e.touches[1]; return Math.sqrt(Math.pow(a.clientX - b.clientX, 2) + Math.pow(a.clientY - b.clientY, 2)); }
+  canvas.addEventListener('touchstart', function (e) {
+    if (e.touches.length === 2) {
+      var mx = (e.touches[0].clientX + e.touches[1].clientX) / 2, my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      var p0 = pointSous(mx, my);
+      camera.getWorldDirection(dirVue);
+      pince = { d: ecartDoigts(e), plan: new THREE.Plane().setFromNormalAndCoplanarPoint(dirVue.clone(), p0), p: p0 };
+    } else pince = null;
+  }, { passive: true });
+  canvas.addEventListener('touchmove', function (e) {
+    if (!pince || e.touches.length !== 2) return;
+    var d = ecartDoigts(e);
+    if (d > 0 && pince.d > 0) {
+      // point fixe = ce qui se trouve sous le milieu des doigts, à la profondeur visée au départ
+      var mx = (e.touches[0].clientX + e.touches[1].clientX) / 2, my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      ndc.set(mx / window.innerWidth * 2 - 1, -(my / window.innerHeight) * 2 + 1);
+      raycaster.setFromCamera(ndc, camera);
+      var p = raycaster.ray.intersectPlane(pince.plan, pointZoom) ? pointZoom.clone() : pince.p;
+      zoomerVers(p, pince.d / d);
+    }
+    pince.d = d;
+  }, { passive: true });
+  canvas.addEventListener('touchend', function (e) { if (e.touches.length < 2) pince = null; }, { passive: true });
   controls.addEventListener('change', demanderRendu);
   // Pendant un geste : résolution réduite (plus fluide sur l'iPad), puis pleine résolution à l'arrêt.
   var PR_GESTE = Math.min(pr, 1), mesure = null, derniereFluidite = '';

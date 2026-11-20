@@ -1,10 +1,10 @@
 // Service worker : garde l'application et le modèle en mémoire pour fonctionner sans connexion.
-var CACHE = 'anatomie3d-1.1.0';
+var CACHE = 'anatomie3d-1.1.1';
 var FICHIERS = [
-  './', 'index.html', 'style.css?v=2', 'app.js?v=2', 'vendor/three.min.js', 'vendor/OrbitControls.js', 'icone-180.png',
-  'donnees/manifeste.json?v=1.1.0', 'donnees/fiches.json?v=1.1.0'
+  './', 'index.html', 'style.css?v=2', 'app.js?v=3', 'vendor/three.min.js', 'vendor/OrbitControls.js', 'icone-180.png',
+  'donnees/manifeste.json?v=1.1.1', 'donnees/fiches.json?v=1.1.1'
 ].concat(['os', 'muscles', 'articulations', 'nerfs', 'peau', 'insertions', 'cardio', 'visceres', 'lymphatique', 'encephale', 'sens'].map(function (n) {
-  return 'donnees/' + n + '.bin?v=1.1.0';
+  return 'donnees/' + n + '.bin?v=1.1.1';
 }));
 
 self.addEventListener('install', function (e) {
