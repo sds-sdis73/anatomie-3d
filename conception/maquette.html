@@ -1,0 +1,438 @@
+<title>Refonte Anatomie 3D</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+/* Mise en page : une colonne de lecture, les maquettes iPad prennent toute la largeur de la colonne. */
+:root {
+  --bg: #f3f3f1;
+  --surface: #ffffff;
+  --fg: #1c1f23;
+  --muted: #5d636b;
+  --line: #dcdcd8;
+  --accent: #b14f3e;      /* teinte muscle */
+  --accent-soft: #f3e2dd;
+  --ok: #2f7d4f;
+  --warn: #9a6a12;
+  --no: #a23b32;
+  --ecran: #15181c;       /* fond des maquettes, identique dans les deux thèmes */
+  --verre: rgba(20, 23, 28, 0.78);
+  --verre-texte: #eceef0;
+  --verre-muet: #9aa3ad;
+  --verre-bord: rgba(255, 255, 255, 0.1);
+  --f-titre: "Space Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --f-texte: "Inter", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171a; --surface: #1c2024; --fg: #e8eaec; --muted: #a2a9b1; --line: #2d3238;
+    --accent: #e3876f; --accent-soft: #3a2621; --ok: #63c08a; --warn: #e0b45a; --no: #ef8a80;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14171a; --surface: #1c2024; --fg: #e8eaec; --muted: #a2a9b1; --line: #2d3238;
+  --accent: #e3876f; --accent-soft: #3a2621; --ok: #63c08a; --warn: #e0b45a; --no: #ef8a80;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--f-texte); font-size: 16px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0;
+}
+.page { max-width: 1000px; margin: 0 auto; padding-block: 40px 80px; }
+h1, h2, h3 { font-family: var(--f-titre); line-height: 1.2; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(30px, 5vw, 44px); letter-spacing: -0.5px; }
+h2 { font-size: clamp(22px, 3.4vw, 28px); margin-top: 64px; margin-bottom: 12px; }
+h3 { font-size: 18px; margin-bottom: 6px; }
+p { margin: 0 0 12px; max-width: 68ch; }
+.surtitre { font-size: 12.5px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--accent); font-weight: 600; margin-bottom: 10px; }
+.chapo { font-size: 18px; color: var(--muted); margin-top: 14px; max-width: 64ch; }
+.decision {
+  margin-top: 28px; padding: 18px 20px; border-radius: 14px; background: var(--accent-soft); border: 1px solid var(--line);
+  display: grid; gap: 6px;
+}
+.decision strong { font-family: var(--f-titre); font-size: 17px; }
+.decision ul { margin: 4px 0 0; padding-left: 20px; }
+
+/* Problèmes */
+.trois { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 18px; }
+.carte { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; min-width: 0; }
+.carte .etiq { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); font-weight: 600; }
+.carte h3 { margin-top: 6px; }
+.carte p { font-size: 15px; }
+.carte .corr { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; font-size: 15px; }
+.carte .corr b { color: var(--ok); }
+
+/* Comparaisons */
+.compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+figure { margin: 0; }
+figure img { display: block; width: 100%; border-radius: 12px; background: var(--ecran); }
+figcaption { font-size: 13.5px; color: var(--muted); margin-top: 6px; }
+figcaption b { color: var(--fg); }
+.ingredients { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 20px; }
+.ingredients div { border-left: 3px solid var(--accent); padding-left: 12px; min-width: 0; }
+.ingredients b { font-family: var(--f-titre); display: block; font-size: 16px; }
+.ingredients span { font-size: 14.5px; color: var(--muted); }
+.limite { font-size: 15px; color: var(--muted); border: 1px dashed var(--line); border-radius: 12px; padding: 12px 16px; margin-top: 18px; }
+
+/* ===== Maquette iPad ===== */
+.ipad {
+  position: relative; width: 100%; max-width: 100%; aspect-ratio: 4 / 3; margin-top: 18px;
+  border-radius: 26px; padding: 2.2%; background: #0b0c0e; box-shadow: 0 14px 40px rgba(0,0,0,.25);
+}
+.ecran {
+  position: relative; width: 100%; height: 100%; border-radius: 12px; overflow: hidden; background: var(--ecran) center / cover no-repeat;
+  container-type: inline-size; color: var(--verre-texte); font-family: var(--f-texte);
+}
+.ecran .verre { background: var(--verre); border: 1px solid var(--verre-bord); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.barre-haut {
+  position: absolute; left: 0; right: 0; top: 0; height: 7.5%; display: flex; align-items: center; gap: 2cqw; padding: 0 2cqw;
+  border-radius: 0; border-width: 0 0 1px 0; font-size: 1.6cqw;
+}
+.barre-haut .retour { color: var(--verre-muet); }
+.barre-haut .titre { flex: 1; text-align: center; font-weight: 600; }
+.barre-haut .titre small { color: var(--verre-muet); font-weight: 400; }
+.barre-haut .ico { width: 3.6cqw; height: 3.6cqw; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.08); font-size: 1.7cqw; }
+
+.couches { position: absolute; right: 1.6%; top: 10%; width: 23%; bottom: 15%; border-radius: 1.6cqw; padding: 1.4cqw 1.2cqw; display: flex; flex-direction: column; font-size: 1.32cqw; }
+.couches h4 { margin: 0 0 1cqw; font-family: var(--f-titre); font-size: 1.5cqw; letter-spacing: .3px; }
+.regle { display: grid; grid-template-columns: 1.8cqw 1fr auto; column-gap: .9cqw; align-items: center; row-gap: .55cqw; }
+.regle .piste { grid-row: 1 / span 7; grid-column: 1; align-self: stretch; justify-self: center; width: .5cqw; border-radius: 1cqw; background: rgba(255,255,255,.14); position: relative; }
+.regle .piste::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 33%; border-radius: 1cqw; background: #e3876f; }
+.regle .curseur { grid-row: 5; grid-column: 1; justify-self: center; width: 1.9cqw; height: 1.9cqw; border-radius: 50%; background: #fff; box-shadow: 0 0 0 .5cqw rgba(227,135,111,.35); z-index: 1; }
+.regle .nom { grid-column: 2; }
+.regle .nom.ote { color: var(--verre-muet); text-decoration: line-through; text-decoration-color: rgba(255,255,255,.25); }
+.regle .oeil { grid-column: 3; color: var(--verre-muet); font-size: 1.25cqw; }
+.regle .oeil.on { color: #fff; }
+.sep { border-top: 1px solid var(--verre-bord); margin: 1.1cqw 0 .9cqw; }
+.syst { display: grid; grid-template-columns: 1fr auto; row-gap: .55cqw; }
+.syst .oeil { color: var(--verre-muet); }
+.syst .oeil.on { color: #fff; }
+.cote { margin-top: auto; display: flex; gap: .5cqw; }
+.cote span { flex: 1; text-align: center; padding: .55cqw 0; border-radius: .8cqw; background: rgba(255,255,255,.07); color: var(--verre-muet); }
+.cote span.on { background: #e3876f; color: #1b1210; font-weight: 600; }
+
+.outils { position: absolute; left: 50%; transform: translateX(-62%); bottom: 2.4%; display: flex; gap: .4cqw; padding: .7cqw; border-radius: 1.8cqw; font-size: 1.12cqw; }
+.outils span { display: grid; justify-items: center; gap: .2cqw; padding: .5cqw .9cqw; border-radius: 1.1cqw; color: var(--verre-muet); min-width: 6.2cqw; }
+.outils span i { font-style: normal; font-size: 1.9cqw; color: var(--verre-texte); line-height: 1; }
+.outils span.on { background: rgba(227,135,111,.22); color: #f4c2b4; }
+.outils span.on i { color: #f4c2b4; }
+
+.etiquette { position: absolute; left: 7%; top: 17%; width: 24%; border-radius: 1.4cqw; padding: 1.1cqw 1.3cqw; font-size: 1.25cqw; }
+.etiquette .t { font-size: 1.05cqw; text-transform: uppercase; letter-spacing: .12cqw; color: #f4c2b4; }
+.etiquette .n { font-family: var(--f-titre); font-size: 1.95cqw; font-weight: 600; line-height: 1.15; margin: .3cqw 0 .2cqw; }
+.etiquette .la { color: var(--verre-muet); font-style: italic; }
+.etiquette .b { display: flex; gap: .5cqw; margin-top: .9cqw; }
+.etiquette .b span { flex: 1; text-align: center; padding: .5cqw 0; border-radius: .7cqw; background: rgba(255,255,255,.09); }
+.fil { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.puce { position: absolute; width: 2.8cqw; height: 2.8cqw; border-radius: 50%; background: #e3876f; color: #1b1210; font-weight: 700; font-size: 1.45cqw; display: grid; place-items: center; box-shadow: 0 0 0 .4cqw rgba(0,0,0,.35); font-family: var(--f-titre); }
+
+.legende-maquette { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 22px; margin-top: 16px; padding: 0; list-style: none; }
+.legende-maquette li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; font-size: 15px; min-width: 0; }
+.legende-maquette .num { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--surface); display: grid; place-items: center; font-weight: 700; font-family: var(--f-titre); font-size: 14px; }
+.legende-maquette b { display: block; }
+
+/* Accueil */
+.accueil { position: absolute; inset: 0; padding: 4cqw 4cqw 3cqw; display: flex; flex-direction: column; background: radial-gradient(ellipse at 50% 30%, #2c3138 0%, #171a1e 70%); }
+.accueil .h { font-family: var(--f-titre); font-size: 3cqw; font-weight: 600; }
+.accueil .sous { color: var(--verre-muet); font-size: 1.5cqw; margin: .4cqw 0 2.2cqw; }
+.vignettes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.6cqw; flex: 1; min-height: 0; }
+.vignette { position: relative; border-radius: 1.6cqw; overflow: hidden; background: #111 center / cover no-repeat; border: 1px solid var(--verre-bord); }
+.vignette span { position: absolute; left: 0; right: 0; bottom: 0; padding: 2.2cqw 1.4cqw 1.1cqw; font-family: var(--f-titre); font-size: 1.8cqw; font-weight: 600; background: linear-gradient(transparent, rgba(0,0,0,.75)); }
+.vignette small { display: block; font-family: var(--f-texte); font-weight: 400; font-size: 1.2cqw; color: #c9ced4; }
+.puces-sys { display: flex; flex-wrap: wrap; gap: .8cqw; margin-top: 2cqw; font-size: 1.3cqw; }
+.puces-sys span { padding: .6cqw 1.3cqw; border-radius: 3cqw; background: rgba(255,255,255,.08); border: 1px solid var(--verre-bord); }
+
+/* Gestes */
+.gestes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.geste { display: grid; grid-template-columns: 64px 1fr; gap: 14px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; min-width: 0; }
+.geste svg { width: 64px; height: 48px; }
+.geste b { display: block; font-size: 15.5px; }
+.geste span { font-size: 14.5px; color: var(--muted); }
+.geste.neuf { border-color: var(--accent); }
+.badge { display: inline-block; font-size: 11.5px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; color: var(--accent); margin-left: 6px; }
+
+/* Tableau des fonctions */
+.tableau { overflow-x: auto; margin-top: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 15px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12.5px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+.etat { display: inline-block; font-size: 12.5px; font-weight: 600; padding: 2px 9px; border-radius: 20px; white-space: nowrap; }
+.e-ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); }
+.e-new { color: var(--accent); background: var(--accent-soft); }
+.e-no { color: var(--no); background: color-mix(in srgb, var(--no) 13%, transparent); }
+.e-mid { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+
+/* Étapes */
+.etapes { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 12px; counter-reset: e; }
+.etapes li { counter-increment: e; display: grid; grid-template-columns: 44px 1fr auto; gap: 14px; align-items: start; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.etapes li::before { content: counter(e); width: 36px; height: 36px; border-radius: 50%; background: var(--fg); color: var(--bg); display: grid; place-items: center; font-family: var(--f-titre); font-weight: 700; }
+.etapes b { display: block; font-size: 16px; }
+.etapes span { font-size: 14.5px; color: var(--muted); }
+.etapes .qui { font-size: 13.5px; color: var(--muted); text-align: right; white-space: nowrap; }
+.etapes .qui strong { color: var(--fg); display: block; }
+
+@media (max-width: 760px) {
+  .trois, .ingredients, .gestes, .legende-maquette { grid-template-columns: 1fr; }
+  .compare { grid-template-columns: 1fr; }
+  .etapes li { grid-template-columns: 40px 1fr; }
+  .etapes .qui { grid-column: 2; text-align: left; }
+  .ipad { border-radius: 14px; padding: 1.6%; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="page">
+  <div class="surtitre">Anatomie 3D · plan de refonte</div>
+  <h1>Une application plus réaliste, plus simple à manier</h1>
+  <p class="chapo">Ce plan reprend vos remarques : l’esthétique, le déplacement à deux doigts, la page qui saute sur l’iPad, et la disposition de l’application de référence. Les images du nouveau rendu ci-dessous sont de vrais rendus faits avec nos modèles, pas des illustrations.</p>
+
+  <div class="decision">
+    <strong>Ce que j’attends de vous</strong>
+    <ul>
+      <li>Votre accord, ou vos corrections, sur la disposition et les gestes proposés.</li>
+      <li>Fond sombre ou fond clair (comparaison plus bas).</li>
+      <li>Si je corrige tout de suite les deux défauts de manipulation, avant le reste.</li>
+    </ul>
+  </div>
+
+  <!-- ============ PROBLÈMES ============ -->
+  <h2>Les trois problèmes et leur correction</h2>
+  <div class="trois">
+    <div class="carte">
+      <div class="etiq">Sur l’iPad</div>
+      <h3>La page saute à chaque toucher</h3>
+      <p>Cause probable : pour rester fluide, l’image baisse de résolution dès qu’un doigt se pose, puis remonte quand il se lève. Sur l’iPad, ce double changement fait sauter l’affichage.</p>
+      <div class="corr"><b>Correction :</b> résolution fixe et page entièrement bloquée (plus de rebond ni de défilement). La fluidité sera gagnée autrement, par les modèles par région.</div>
+    </div>
+    <div class="carte">
+      <div class="etiq">Manipulation</div>
+      <h3>Déplacer avec deux doigts</h3>
+      <p>Le déplacement à deux doigts existe, mais il est perturbé par le saut d’image et par mon zoom ajouté récemment.</p>
+      <div class="corr"><b>Correction :</b> deux doigts font tout en même temps, comme dans l’application de référence : glisser pour déplacer, pincer pour zoomer vers les doigts, tourner pour pivoter.</div>
+    </div>
+    <div class="carte">
+      <div class="etiq">Apparence</div>
+      <h3>Rendu trop « plastique »</h3>
+      <p>Couleurs uniformes, éclairage plat, aucun relief dans les creux : le corps ressemble à un modèle en plastique.</p>
+      <div class="corr"><b>Correction :</b> nouveau rendu inspiré de l’application de référence, détaillé juste en dessous.</div>
+    </div>
+  </div>
+
+  <!-- ============ RENDU ============ -->
+  <h2>Le nouveau rendu</h2>
+  <p>L’application de référence montre des muscles saumon striés de fibres, des tendons blanc nacré, des os gris clair mats et une lumière de studio photo qui creuse les reliefs. J’ai reproduit ces trois ingrédients avec nos modèles :</p>
+  <div class="ingredients">
+    <div><b>Lumière de studio</b><span>Une lumière principale, une lumière d’appoint et un reflet doux, précalculés pour ne pas ralentir l’iPad.</span></div>
+    <div><b>Fibres musculaires</b><span>Fines fibres groupées en faisceaux, dans la vraie direction de chaque muscle : en éventail pour le grand pectoral, le trapèze ou le deltoïde, parallèles pour le biceps ou le droit de l’abdomen.</span></div>
+    <div><b>Ombres de contact</b><span>Les creux entre muscles et os s’assombrissent, ce qui donne la profondeur. Calcul fait une fois pour toutes, à la préparation.</span></div>
+  </div>
+
+  <div class="compare">
+    <figure><img src="img/torse-ancien.jpg" alt="Torse, rendu actuel : couleurs plates"><figcaption><b>Aujourd’hui</b> · torse de face</figcaption></figure>
+    <figure><img src="img/torse-nouveau.jpg" alt="Torse, nouveau rendu : fibres, lumière de studio, ombres"><figcaption><b>Proposé</b> · même vue, nouveau rendu</figcaption></figure>
+    <figure><img src="img/epaule-ancien.jpg" alt="Épaule, rendu actuel"><figcaption><b>Aujourd’hui</b> · épaule droite</figcaption></figure>
+    <figure><img src="img/epaule-nouveau.jpg" alt="Épaule, nouveau rendu avec fibres du deltoïde et du grand pectoral"><figcaption><b>Proposé</b> · fibres du deltoïde et du grand pectoral</figcaption></figure>
+  </div>
+  <div class="compare">
+    <figure><img src="img/jambe-nouveau.jpg" alt="Cuisses et genoux : quadriceps, sartorius, adducteurs avec leurs fibres"><figcaption><b>Proposé</b> · cuisses : sartorius, quadriceps et adducteurs, chacun avec sa direction de fibres</figcaption></figure>
+    <figure><img src="img/dos-profond.jpg" alt="Dos en plan profond : multifides, érecteurs, côtes et bassin"><figcaption><b>Proposé</b> · dos en plan profond : érecteurs du rachis, intercostaux, os du bassin</figcaption></figure>
+  </div>
+
+  <p class="limite">Version 2 du rendu, après votre remarque du 27 novembre : les ondulations venaient de ma première méthode, qui découpait les fibres en tranches à travers tout le corps. Les fibres sont maintenant calculées muscle par muscle, à partir de leurs zones d’attache sur les os. Le rendu s’approche de la référence sans l’égaler : ses modèles sont sculptés et peints à la main par l’éditeur et lui appartiennent ; les nôtres sont des modèles libres, sans peinture. Quelques petits muscles du cou et de la face restent lisses, faute de données d’attache fiables. La vraie limite viendra de l’iPad mini 2 : c’est pourquoi je propose des modèles par région, plus détaillés et plus légers à la fois.</p>
+
+  <!-- ============ DISPOSITION ============ -->
+  <h2>La nouvelle disposition</h2>
+  <p>L’écran est dégagé : le corps occupe tout l’espace, les commandes flottent par-dessus, en verre fumé. Exemple ci-dessous avec le tronc, côté droit épluché jusqu’au plan profond.</p>
+
+  <div class="ipad" role="img" aria-label="Maquette de l’écran principal sur iPad">
+    <div class="ecran" style="background-image:url('img/ipad-principal.jpg')">
+      <div class="barre-haut verre">
+        <span class="retour">‹ Accueil</span>
+        <span class="titre">Tronc <small>· appareil locomoteur</small></span>
+        <span class="ico">⌕</span><span class="ico">☆</span><span class="ico">⚙</span>
+      </div>
+
+      <svg class="fil" viewBox="0 0 100 75" preserveAspectRatio="none" aria-hidden="true">
+        <polyline points="31,20 37,20 40.5,26" fill="none" stroke="#f4c2b4" stroke-width="0.18"></polyline>
+        <circle cx="40.5" cy="26" r="0.6" fill="#f4c2b4"></circle>
+      </svg>
+      <div class="etiquette verre">
+        <div class="t">Os · côté droit</div>
+        <div class="n">4e côte</div>
+        <div class="la">Costa IV</div>
+        <div class="b"><span>Fiche</span><span>Isoler</span><span>Masquer</span></div>
+      </div>
+
+      <div class="couches verre">
+        <h4>Couches</h4>
+        <div class="regle">
+          <div class="piste"></div><div class="curseur"></div>
+          <span class="nom ote">Peau</span><span class="oeil">○</span>
+          <span class="nom ote">Fascias</span><span class="oeil">○</span>
+          <span class="nom ote">Muscles superficiels</span><span class="oeil">○</span>
+          <span class="nom ote">Muscles moyens</span><span class="oeil">○</span>
+          <span class="nom">Muscles profonds</span><span class="oeil on">●</span>
+          <span class="nom">Ligaments</span><span class="oeil">○</span>
+          <span class="nom">Os</span><span class="oeil on">●</span>
+        </div>
+        <div class="sep"></div>
+        <div class="syst">
+          <span>Nerfs</span><span class="oeil">○</span>
+          <span>Cœur et vaisseaux</span><span class="oeil">○</span>
+          <span>Organes</span><span class="oeil">○</span>
+          <span>Encéphale</span><span class="oeil">○</span>
+        </div>
+        <div class="cote"><span class="on">Droit</span><span>Les deux</span><span>Gauche</span></div>
+      </div>
+
+      <div class="outils verre">
+        <span class="on"><i>☝</i>Nommer</span>
+        <span><i>⧉</i>Plusieurs</span>
+        <span><i>◐</i>Transparent</span>
+        <span><i>◎</i>Isoler</span>
+        <span><i>⊘</i>Masquer</span>
+        <span><i>↺</i>Tout voir</span>
+        <span><i>✎</i>Dessiner</span>
+        <span><i>✂</i>Coupe</span>
+      </div>
+
+      <div class="puce" style="left:2.5%;top:9.5%">1</div>
+      <div class="puce" style="left:5%;top:16.5%">2</div>
+      <div class="puce" style="right:25.5%;top:10.5%">3</div>
+      <div class="puce" style="right:25.5%;bottom:16%">4</div>
+      <div class="puce" style="left:12%;bottom:4%">5</div>
+    </div>
+  </div>
+  <ul class="legende-maquette">
+    <li><span class="num">1</span><div><b>Barre du haut</b>Retour à l’accueil, nom de la région affichée, recherche, signets (vues enregistrées) et réglages.</div></li>
+    <li><span class="num">2</span><div><b>Étiquette accrochée</b>Le nom suit la structure touchée, avec le latin dessous et les actions à portée de doigt.</div></li>
+    <li><span class="num">3</span><div><b>Règle des couches</b>Toutes les couches au même endroit, de la peau à l’os. Expliquée plus bas.</div></li>
+    <li><span class="num">4</span><div><b>Choix du côté</b>Éplucher un seul côté pour comparer superficiel et profond, comme sur l’image.</div></li>
+    <li><span class="num">5</span><div><b>Barre d’outils</b>Les actions de l’application de référence, plus la coupe (nouveau, voir le tableau).</div></li>
+  </ul>
+
+  <h3 style="margin-top:36px">Écran d’accueil</h3>
+  <p>Comme dans l’application de référence, on choisit d’abord une région ou un système. Une région ne charge que ses propres pièces : c’est ce qui permet d’afficher plus de détails tout en restant fluide sur l’iPad mini 2.</p>
+  <div class="ipad" role="img" aria-label="Maquette de l’écran d’accueil">
+    <div class="ecran">
+      <div class="accueil">
+        <div class="h">Anatomie 3D</div>
+        <div class="sous">Choisissez une région du corps ou un système</div>
+        <div class="vignettes">
+          <div class="vignette" style="background-image:url('img/v-corps.jpg')"><span>Corps entier<small>vue d’ensemble</small></span></div>
+          <div class="vignette" style="background-image:url('img/v-tete.jpg')"><span>Tête et cou<small>ATM, cervicales, face</small></span></div>
+          <div class="vignette" style="background-image:url('img/v-tronc.jpg')"><span>Tronc<small>thorax, rachis, bassin</small></span></div>
+          <div class="vignette" style="background-image:url('img/v-bras.jpg')"><span>Membre supérieur<small>épaule, coude, main</small></span></div>
+          <div class="vignette" style="background-image:url('img/v-jambe.jpg')"><span>Membre inférieur<small>hanche, genou, pied</small></span></div>
+          <div class="vignette" style="background-image:url('img/v-squelette.jpg')"><span>Squelette<small>os et articulations</small></span></div>
+        </div>
+        <div class="puces-sys"><span>Muscles</span><span>Nerfs</span><span>Cœur et vaisseaux</span><span>Respiratoire</span><span>Digestif</span><span>Urinaire</span><span>Endocrinien</span><span>Lymphatique</span><span>Œil et oreille</span><span>☆ Mes vues</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ COUCHES EN UN GESTE ============ -->
+  <h2>Ajouter ou enlever des couches en un seul geste</h2>
+  <p>La règle des couches (repère 3) remplace le curseur actuel du bas de l’écran.</p>
+  <div class="gestes">
+    <div class="geste neuf">
+      <svg viewBox="0 0 64 48" aria-hidden="true"><rect x="27" y="4" width="10" height="40" rx="5" fill="none" stroke="currentColor" stroke-width="2" opacity=".5"></rect><circle cx="32" cy="30" r="6" fill="currentColor"></circle><path d="M46 14 L46 34 M42 30 L46 34 L50 30" fill="none" stroke="currentColor" stroke-width="2"></path></svg>
+      <div><b>Glisser le doigt sur la règle <span class="badge">nouveau</span></b><span>Vers le bas : les couches disparaissent une à une, de la peau vers l’os. Vers le haut : elles reviennent. Un seul mouvement continu.</span></div>
+    </div>
+    <div class="geste neuf">
+      <svg viewBox="0 0 64 48" aria-hidden="true"><circle cx="32" cy="24" r="12" fill="none" stroke="currentColor" stroke-width="2"></circle><circle cx="32" cy="24" r="5" fill="currentColor"></circle></svg>
+      <div><b>Toucher l’œil d’une couche <span class="badge">nouveau</span></b><span>Montre ou cache cette couche seule, par exemple garder les ligaments en enlevant les muscles.</span></div>
+    </div>
+    <div class="geste neuf">
+      <svg viewBox="0 0 64 48" aria-hidden="true"><circle cx="32" cy="24" r="6" fill="currentColor"></circle><circle cx="32" cy="24" r="13" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 3"></circle></svg>
+      <div><b>Appui long sur une couche <span class="badge">nouveau</span></b><span>N’affiche plus que celle-ci. Un second appui long rétablit tout.</span></div>
+    </div>
+    <div class="geste">
+      <svg viewBox="0 0 64 48" aria-hidden="true"><rect x="10" y="12" width="44" height="24" rx="12" fill="none" stroke="currentColor" stroke-width="2"></rect><rect x="12" y="14" width="20" height="20" rx="10" fill="currentColor"></rect></svg>
+      <div><b>Droit, Les deux, Gauche</b><span>Choisit le côté épluché. L’autre côté garde ses muscles superficiels.</span></div>
+    </div>
+  </div>
+
+  <!-- ============ GESTES ============ -->
+  <h2>Les gestes sur le corps</h2>
+  <div class="gestes">
+    <div class="geste">
+      <svg viewBox="0 0 64 48" aria-hidden="true"><circle cx="32" cy="26" r="6" fill="currentColor"></circle><path d="M14 26 A18 12 0 0 1 50 26" fill="none" stroke="currentColor" stroke-width="2"></path><path d="M46 21 L50 26 L44 28" fill="none" stroke="currentColor" stroke-width="2"></path></svg>
+      <div><b>Un doigt qui glisse</b><span>Fait tourner le corps.</span></div>
+    </div>
+    <div class="geste neuf">
+      <svg viewBox="0 0 64 48" aria-hidden="true"><circle cx="24" cy="26" r="6" fill="currentColor"></circle><circle cx="40" cy="26" r="6" fill="currentColor"></circle><path d="M18 12 L46 12 M42 8 L46 12 L42 16" fill="none" stroke="currentColor" stroke-width="2"></path></svg>
+      <div><b>Deux doigts qui glissent <span class="badge">corrigé</span></b><span>Déplacent le corps dans l’écran, sans le faire tourner.</span></div>
+    </div>
+    <div class="geste neuf">
+      <svg viewBox="0 0 64 48" aria-hidden="true"><circle cx="22" cy="30" r="6" fill="currentColor"></circle><circle cx="42" cy="18" r="6" fill="currentColor"></circle><path d="M14 38 L8 44 M50 10 L56 4" fill="none" stroke="currentColor" stroke-width="2"></path></svg>
+      <div><b>Pincer <span class="badge">corrigé</span></b><span>Zoome vers l’endroit entre les doigts. Se combine avec le déplacement.</span></div>
+    </div>
+    <div class="geste">
+      <svg viewBox="0 0 64 48" aria-hidden="true"><circle cx="32" cy="24" r="6" fill="currentColor"></circle><circle cx="32" cy="24" r="11" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".6"></circle></svg>
+      <div><b>Toucher une structure</b><span>Affiche son nom dans l’étiquette accrochée.</span></div>
+    </div>
+    <div class="geste neuf">
+      <svg viewBox="0 0 64 48" aria-hidden="true"><circle cx="32" cy="24" r="6" fill="currentColor"></circle><circle cx="32" cy="24" r="11" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".6"></circle><circle cx="32" cy="24" r="17" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".35"></circle></svg>
+      <div><b>Toucher deux fois <span class="badge">nouveau</span></b><span>Centre et rapproche la vue sur la structure touchée.</span></div>
+    </div>
+    <div class="geste neuf">
+      <svg viewBox="0 0 64 48" aria-hidden="true"><circle cx="32" cy="24" r="6" fill="currentColor"></circle><circle cx="32" cy="24" r="13" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 3"></circle></svg>
+      <div><b>Appui long sur une structure <span class="badge">nouveau</span></b><span>Ouvre un petit menu : masquer, isoler, rendre transparent, voir la fiche.</span></div>
+    </div>
+  </div>
+
+  <!-- ============ FONCTIONS ============ -->
+  <h2>Les fonctions de l’application de référence</h2>
+  <p>Relevé fait d’après la fiche de l’App Store, l’historique des versions et le site de l’éditeur.</p>
+  <div class="tableau">
+    <table>
+      <thead><tr><th>Fonction</th><th>Aujourd’hui</th><th>Après la refonte</th></tr></thead>
+      <tbody>
+        <tr><td>Choisir une région ou un système, puis un modèle</td><td><span class="etat e-mid">Partiel</span> corps entier seulement</td><td><span class="etat e-new">Nouveau</span> écran d’accueil, modèles par région plus détaillés</td></tr>
+        <tr><td>Rendu réaliste (textures, lumière)</td><td><span class="etat e-mid">Basique</span></td><td><span class="etat e-new">Refait</span> fibres, lumière de studio, ombres de contact</td></tr>
+        <tr><td>Tourner, zoomer, déplacer</td><td><span class="etat e-mid">Défauts</span> saut d’image, deux doigts</td><td><span class="etat e-ok">Corrigé</span> deux doigts combinés</td></tr>
+        <tr><td>Couches du superficiel au profond</td><td><span class="etat e-ok">Présent</span> curseur en bas</td><td><span class="etat e-new">Refait</span> règle des couches, un seul geste</td></tr>
+        <tr><td>Masquer, isoler une ou plusieurs structures</td><td><span class="etat e-ok">Présent</span></td><td><span class="etat e-ok">Gardé</span> plus appui long</td></tr>
+        <tr><td>Transparence</td><td><span class="etat e-ok">Présent</span></td><td><span class="etat e-ok">Gardé</span></td></tr>
+        <tr><td>Recherche, nom au toucher</td><td><span class="etat e-ok">Présent</span></td><td><span class="etat e-new">Amélioré</span> étiquette accrochée</td></tr>
+        <tr><td>Descriptions : origine, terminaison, innervation, action</td><td><span class="etat e-ok">Présent</span> 216 muscles</td><td><span class="etat e-ok">Gardé</span> à faire relire</td></tr>
+        <tr><td>Signets (vues enregistrées)</td><td><span class="etat e-ok">Présent</span></td><td><span class="etat e-ok">Gardé</span> bouton ☆ en haut</td></tr>
+        <tr><td>Deux langues à la fois (latin, anglais)</td><td><span class="etat e-ok">Présent</span></td><td><span class="etat e-ok">Gardé</span></td></tr>
+        <tr><td>Lumière d’endoscope</td><td><span class="etat e-ok">Présent</span></td><td><span class="etat e-ok">Gardé</span> dans les réglages</td></tr>
+        <tr><td>Dessin sur le modèle</td><td><span class="etat e-ok">Présent</span></td><td><span class="etat e-ok">Gardé</span></td></tr>
+        <tr><td>Quiz</td><td><span class="etat e-ok">Présent</span></td><td><span class="etat e-ok">Gardé</span> depuis l’accueil</td></tr>
+        <tr><td>Vue en coupe (ex. œil, crâne)</td><td><span class="etat e-no">Absent</span></td><td><span class="etat e-new">Nouveau</span> plan de coupe réglable</td></tr>
+        <tr><td>Réalité augmentée</td><td><span class="etat e-no">Absent</span></td><td><span class="etat e-no">Impossible</span> l’iPad mini 2 ne le permet pas</td></tr>
+        <tr><td>Appareil génital féminin</td><td><span class="etat e-no">Absent</span></td><td><span class="etat e-no">Absent</span> pas de modèle libre disponible</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ============ FOND ============ -->
+  <h2>Fond sombre ou fond clair</h2>
+  <div class="compare">
+    <figure><img src="img/ipad-principal.jpg" alt="Nouveau rendu sur fond sombre"><figcaption><b>Sombre</b> · les couleurs ressortent, moins de reflets sur l’écran</figcaption></figure>
+    <figure><img src="img/ipad-clair.jpg" alt="Nouveau rendu sur fond clair"><figcaption><b>Clair</b> · aspect « planche d’atlas », plus doux pour le patient</figcaption></figure>
+  </div>
+  <p style="margin-top:12px">Ma recommandation : le fond sombre, plus proche de l’application de référence et plus lisible dans un cabinet éclairé.</p>
+
+  <!-- ============ ÉTAPES ============ -->
+  <h2>Les étapes</h2>
+  <ol class="etapes">
+    <li><div><b>Corriger la page qui saute et le déplacement à deux doigts</b><span>Mise en ligne seule, pour que votre compagne retrouve tout de suite une manipulation normale.</span></div><div class="qui"><strong>Moi</strong>environ 1 heure</div></li>
+    <li><div><b>Nouveau rendu</b><span>Lumière de studio, fibres, ombres de contact, nouvelles couleurs, fond choisi.</span></div><div class="qui"><strong>Moi</strong>une demi-journée</div></li>
+    <li><div><b>Nouvelle disposition et nouveaux gestes</b><span>Barre du haut, étiquette accrochée, règle des couches, barre d’outils, appui long, double toucher.</span></div><div class="qui"><strong>Moi</strong>environ une journée</div></li>
+    <li><div><b>Écran d’accueil, modèles par région et vue en coupe</b><span>Modèles plus détaillés pour la tête, le tronc et les membres.</span></div><div class="qui"><strong>Moi</strong>environ une journée</div></li>
+    <li><div><b>Essai sur l’iPad du cabinet</b><span>Après chaque étape mise en ligne : vos remarques, et la fluidité affichée dans les réglages.</span></div><div class="qui"><strong>Vous</strong>et votre compagne</div></li>
+  </ol>
+
+  <div class="decision" style="margin-top:28px">
+    <strong>La seule chose à faire maintenant</strong>
+    <span>Me répondre sur les trois points du début : disposition et gestes, fond sombre ou clair, et la correction immédiate des deux défauts de manipulation.</span>
+  </div>
+</div>
