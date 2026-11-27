@@ -1,6 +1,7 @@
 // Terminologia Anatomica 2 (via Z-Anatomy) : anglais → { la, fr }
 import fs from 'fs';
-const lignes = fs.readFileSync('../sources-za/TA2.csv', 'utf8').replace(/^﻿/, '').split(/\r?\n/);
+import { ZA } from './sources.mjs';
+const lignes = fs.readFileSync(ZA + 'TA2.csv', 'utf8').replace(/^﻿/, '').split(/\r?\n/);
 const TA = new Map();
 const cle = s => s.toLowerCase().replace(/[()]/g, '').replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
 for (const l of lignes.slice(1)) {

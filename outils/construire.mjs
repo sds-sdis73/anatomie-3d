@@ -8,9 +8,10 @@ import { couche as coucheMuscle } from './couches.mjs';
 import { nomFr, fiche } from './fr.mjs';
 import { ta2 } from './ta2.mjs';
 import { DESC } from './descriptions-muscles.mjs';
+import { ZA } from './sources.mjs';
 
 await MeshoptSimplifier.ready;
-const SRC = '../sources-za/repo/Resources/Models/FBX/';
+const SRC = ZA + 'repo/Resources/Models/FBX/';
 const OUT = '../docs/donnees/';
 fs.mkdirSync(OUT, { recursive: true });
 
