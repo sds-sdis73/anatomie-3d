@@ -1,0 +1,16 @@
+{
+  "name": "anatomie-3d-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node lancer.mjs",
+    "test:rapide": "node lancer.mjs --rapide",
+    "references": "node lancer.mjs --maj-references"
+  },
+  "dependencies": {
+    "acorn": "^8.12.1",
+    "pixelmatch": "^5.3.0",
+    "pngjs": "^7.0.0",
+    "puppeteer-core": "^23.11.1"
+  }
+}

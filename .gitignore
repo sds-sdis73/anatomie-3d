@@ -6,3 +6,5 @@ outils/manifeste-brut.json
 outils/noms.txt
 outils/muscles-za.txt
 .DS_Store
+tests/node_modules/
+tests/resultats/

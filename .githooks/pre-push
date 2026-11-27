@@ -1,0 +1,13 @@
+#!/bin/sh
+# Verrou : aucune mise en ligne si un contrôle échoue.
+[ "$TESTS_DEJA_PASSES" = "1" ] && exit 0
+cd "$(git rev-parse --show-toplevel)/tests" || exit 1
+echo "Contrôles avant mise en ligne…"
+node lancer.mjs > /tmp/anatomie-tests.log 2>&1
+if [ $? -ne 0 ]; then
+  grep -E "✗|→" /tmp/anatomie-tests.log
+  tail -1 /tmp/anatomie-tests.log
+  echo "Mise en ligne BLOQUÉE. Journal complet : /tmp/anatomie-tests.log"
+  exit 1
+fi
+tail -1 /tmp/anatomie-tests.log

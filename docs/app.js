@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  var VERSION = '1.2.0';
+  var VERSION = '1.2.1';
   var DONNEES = 'donnees/';
   var PAQUETS = ['os', 'muscles', 'articulations', 'nerfs', 'peau'];
 
@@ -95,7 +95,9 @@
   controls.enableKeys = false;
   // Zoom vers le point visé (molette ou pincement) : on remplace le zoom de three.js r128, qui vise toujours le centre.
   controls.enableZoom = false;
-  controls.touches.TWO = THREE.TOUCH.PAN;
+  // three.js r128 n'accepte à deux doigts que DOLLY_PAN ou DOLLY_ROTATE (TOUCH.PAN y est ignoré sans erreur).
+  // Avec enableZoom = false, DOLLY_PAN ne fait que déplacer ; le zoom vers les doigts est géré plus bas.
+  controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
   var plan = new THREE.Plane(), pointZoom = new THREE.Vector3(), dirVue = new THREE.Vector3();
   function pointSous(x, y) {
     var h = viser(x, y, false);
@@ -412,6 +414,7 @@
       setTimeout(function () { document.getElementById('chargement').style.display = 'none'; }, 500);
       charger(DONNEES + 'fiches.json?v=' + VERSION, 'json').then(function (f) { fiches = typeof f === 'string' ? JSON.parse(f) : f; majCarte(); });
       construireIndexRecherche();
+      sonde.pret = true;
     }).catch(function (e) {
       texteProg.textContent = 'Impossible de charger le modèle. Vérifiez la connexion puis rouvrez l’application. (' + e.message + ')';
     });
@@ -1343,6 +1346,15 @@
     navigator.serviceWorker.register('sw.js').catch(function () {});
   }
 
+  // Sonde de lecture pour les tests automatiques (aucun effet sur l'usage normal)
+  var sonde = window.__anatomie = {
+    pret: false, version: VERSION, etat: etat, camera: camera, controls: controls, renderer: renderer, scene: scene,
+    manifeste: function () { return M; },
+    visibles: function () { var n = 0; for (var i = 0; i < meshes.length; i++) if (meshes[i] && meshes[i].visible) n++; return n; },
+    visiblesPar: function () { var r = {}; for (var i = 0; i < meshes.length; i++) { var m = meshes[i]; if (m && m.visible) { var c = m.userData.p.couche; r[c] = (r[c] || 0) + 1; } } return r; },
+    viser: function (x, y) { var h = viser(x, y, false); return h ? { id: h.object.userData.p.id, en: h.object.userData.p.en, fr: h.object.userData.p.fr, couche: h.object.userData.p.couche } : null; },
+    info: function () { renderer.render(scene, camera); return { appels: renderer.info.render.calls, triangles: renderer.info.render.triangles, pr: renderer.getPixelRatio(), w: canvas.width, h: canvas.height }; }
+  };
   construireVues();
   synchroniserCommandes();
   redimensionner();
