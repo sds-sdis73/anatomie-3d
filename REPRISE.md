@@ -27,6 +27,7 @@ npm install            # three@0.160 (lecture FBX côté Node), meshoptimizer, p
 #   git clone --depth 1 --filter=blob:none --sparse -b PC-Version https://github.com/LluisV/Z-Anatomy.git ../sources-za/repo
 #   cd ../sources-za/repo && git sparse-checkout set --no-cone "/Resources/Descriptions/French definitions/" "/Resources/Models/FBX/SkeletalSystem100.fbx" "/Resources/Models/FBX/MuscularSystem100.fbx" "/Resources/Models/FBX/Joints100.fbx" "/Resources/Models/FBX/NervousSystem100.fbx" "/Resources/Models/FBX/Regions of human body100.fbx"
 node construire.mjs
+node ao.mjs          # ombres de contact + fibres musculaires (~35 s), À relancer après chaque construire.mjs
 ```
 Taux d'allègement par couche : constante `RATIO` dans `construire.mjs`.
 
@@ -52,6 +53,12 @@ Taux d'allègement par couche : constante `RATIO` dans `construire.mjs`.
 Couches à éplucher, systèmes, toucher pour nommer, sélection multiple, isoler / masquer / transparent, recherche (français, latin, anglais),
 fiches muscles + descriptions, vues mémorisées, nom secondaire (latin / anglais), lumière d'endoscope, dessin, quiz (« Où est… ? », « Qu'est-ce que c'est ? »).
 Non reproductible : la réalité augmentée (pas d'ARKit ni de WebXR dans Safari 12). Pas de modèle génital féminin dans Z-Anatomy.
+
+## Rendu (v1.2.0)
+- Matériau unique `tissu()` dans `app.js` : éclairage studio précalculé (matcap généré au démarrage), ombres de contact (attribut `ao`, fichiers `ao-os.bin` / `ao-muscles.bin`) et fibres musculaires (attribut `fs`, fichier `fibres-s.bin`).
+- `fs` = position « en travers des fibres » : angle autour du point de convergence pour les muscles en éventail, distance latérale à l'axe sinon. Les attaches sont regroupées par position (les étiquettes origine/terminaison de la source sont parfois inversées).
+- Le rendu des fibres exige `OES_standard_derivatives` (WebGL 1) ; sans elle, muscles lisses. Interrupteur « Fibres musculaires détaillées » dans Couches.
+- Prototype de réglage du rendu : `prototype/index.html` (paramètres dans l'adresse : `cible`, `dir`, `dist`, `niveau`, `cote`, `fond=clair`).
 
 ## Repères du modèle
 - Unités : cm ; Y vers le haut (pieds à 0, tête à ~171) ; avant du corps vers +Z ; côté gauche du patient vers +X.

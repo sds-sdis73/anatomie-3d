@@ -13,6 +13,7 @@
   "dependencies": {
     "meshoptimizer": "^0.21.0",
     "puppeteer-core": "^23.11.1",
-    "three": "^0.160.0"
+    "three": "^0.160.0",
+    "three-mesh-bvh": "^0.7.8"
   }
 }

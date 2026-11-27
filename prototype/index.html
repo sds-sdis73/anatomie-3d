@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Prototype de rendu</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1e22; }
+  body.clair { background: radial-gradient(ellipse at 50% 40%, #f4f4f2 0%, #d9dad7 60%, #c9cac7 100%); }
+  body.sombre { background: radial-gradient(ellipse at 50% 38%, #3a3f46 0%, #202328 55%, #121417 100%); }
+  canvas { display: block; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script src="../docs/vendor/three.min.js"></script>
+<script>
+// Prototype : éclairage studio précalculé (matcap) + fibres musculaires + ombres de contact précalculées.
+(function () {
+  var q = {}; location.search.slice(1).split('&').forEach(function (kv) { var p = kv.split('='); q[p[0]] = decodeURIComponent(p[1] || ''); });
+  document.body.className = q.fond === 'clair' ? 'clair' : 'sombre';
+  var canvas = document.getElementById('c');
+  // WebGL 1 forcé : c'est ce que l'iPad mini 2 (iOS 12) propose
+  var gl = canvas.getContext('webgl', { antialias: true, alpha: true }) || canvas.getContext('experimental-webgl', { antialias: true, alpha: true });
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, context: gl, antialias: true, alpha: true });
+  renderer.extensions.get('OES_standard_derivatives');
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(innerWidth, innerHeight, false);
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 2, 3000);
+
+  // --- matcap studio généré : rgb = diffus (÷1.4), a = brillance
+  var T = 256, data = new Uint8Array(T * T * 4);
+  function nrm(v) { var l = Math.hypot(v[0], v[1], v[2]); return [v[0] / l, v[1] / l, v[2] / l]; }
+  var L1 = nrm([-0.4, 0.55, 0.75]), L2 = nrm([0.65, 0.05, 0.45]), H = nrm([L1[0], L1[1], L1[2] + 1]);
+  for (var y = 0; y < T; y++) for (var x = 0; x < T; x++) {
+    var nx = (x + 0.5) / T * 2 - 1, ny = (y + 0.5) / T * 2 - 1, r2 = nx * nx + ny * ny, i = (y * T + x) * 4;
+    if (r2 > 1) { nx /= Math.sqrt(r2); ny /= Math.sqrt(r2); r2 = 1; }
+    var nz = Math.sqrt(Math.max(0, 1 - r2));
+    var d1 = Math.max(0, nx * L1[0] + ny * L1[1] + nz * L1[2]), d2 = Math.max(0, nx * L2[0] + ny * L2[1] + nz * L2[2]);
+    var ciel = 0.5 + 0.5 * ny, rim = Math.pow(1 - nz, 2.2);
+    var dif = 0.16 + 0.78 * Math.pow(d1, 1.1) + 0.24 * d2 + 0.14 * ciel + 0.22 * rim;
+    var hd = Math.max(0, nx * H[0] + ny * H[1] + nz * H[2]);
+    var sp = Math.pow(hd, 48) + 0.25 * Math.pow(hd, 8);
+    data[i] = Math.min(255, dif / 1.4 * 255); data[i + 1] = Math.min(255, dif / 1.4 * 250); data[i + 2] = Math.min(255, dif / 1.4 * 242);
+    data[i + 3] = Math.min(255, sp * 255);
+  }
+  var matcap = new THREE.DataTexture(data, T, T, THREE.RGBAFormat);
+  matcap.magFilter = matcap.minFilter = THREE.LinearFilter; matcap.needsUpdate = true;
+
+  var vs = [
+    'precision highp float;',
+    'uniform mat4 modelMatrix, modelViewMatrix, projectionMatrix; uniform mat3 normalMatrix;',
+    'attribute vec3 position, normal, color, fibre; attribute float ao, tissu, fs;',
+    'varying vec3 vN, vNw, vC, vP, vF; varying float vAo, vT, vS;',
+    'void main() {',
+    '  vS = fs;',
+    '  vNw = normalize(mat3(modelMatrix) * normal);',
+    '  vec4 wp = modelMatrix * vec4(position, 1.0); vP = wp.xyz;',
+    '  vN = normalize(normalMatrix * normal); vC = color; vAo = ao; vT = tissu; vF = fibre;',
+    '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+    '}'].join('\n');
+  var fs = [
+    '#extension GL_OES_standard_derivatives : enable',
+    'precision highp float;',
+    'uniform sampler2D matcap; uniform float fibresOn;',
+    'varying vec3 vN, vNw, vC, vP, vF; varying float vAo, vT, vS;',
+    'float h(float n) { return fract(sin(n * 0.1031 + 7.13) * 43758.5453); }',
+    'float bruit(float x) { float i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(h(i), h(i + 1.0), f); }',
+    'void main() {',
+    '  vec3 n = normalize(vN);',
+    '  vec4 m = texture2D(matcap, vec2(n.x * 0.49 + 0.5, n.y * 0.49 + 0.5));',
+    '  vec3 alb = vC; float brille = 0.10;',
+    '  if (vT > 0.5 && fibresOn > 0.5) {',
+    '    float u = vS;',
+    // la coordonnee doit varier a la surface au moins moitie moins vite que la distance ; sinon, tourbillons : on efface
+    '    float pente = fwidth(u) / max(length(fwidth(vP)), 1e-5);',
+    '    float fiable = smoothstep(0.3, 0.6, pente);',
+    '    {',
+    '      float fx = u * 2.4; float cell = floor(fx);',
+    '      float bord = abs(fract(fx) - 0.5) * 2.0;',
+    '      float fadeG = clamp(1.6 - fwidth(fx) * 3.0, 0.0, 1.0) * fiable;',
+    '      float sillon = smoothstep(0.84, 1.0, bord) * (0.5 + 0.5 * h(cell * 3.7));',
+    '      float teinteF = 0.93 + 0.12 * h(cell);',
+    '      float fu = u * 16.0 + h(cell) * 9.0;',
+    '      float fadeF = clamp(1.5 - fwidth(fu) * 2.2, 0.0, 1.0) * fiable;',
+    '      float fib = 0.6 * bruit(fu) + 0.4 * bruit(fu * 2.3 + 5.0);',
+    '      float ton = mix(1.0, teinteF, fadeG);',
+    '      ton *= mix(1.0, 0.88 + 0.22 * fib, fadeF);',
+    '      alb *= ton * (1.0 - 0.32 * sillon * fadeG);',
+    '      brille = 0.07 + 0.09 * fib * fadeF;',
+    '    }',
+    '  }',
+    '  float occ = pow(clamp(vAo, 0.0, 1.0), 1.5); occ = mix(0.15, 1.0, occ);',
+    '  vec3 col = alb * m.rgb * 1.4 * occ + vec3(m.a) * brille * occ;',
+    '  gl_FragColor = vec4(col, 1.0);',
+    '}'].join('\n');
+  var nouveau = q.rendu !== 'ancien';
+  var mat = new THREE.RawShaderMaterial({ vertexShader: vs, fragmentShader: fs, uniforms: { matcap: { value: matcap }, fibresOn: { value: q.fibres === '0' ? 0 : 1 } } });
+  var matAncien = new THREE.MeshLambertMaterial({ vertexColors: true });
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x3a4250, 0.55));
+  var lampe = new THREE.DirectionalLight(0xffffff, 0.72); lampe.position.set(0.35, 0.55, 1); camera.add(lampe); scene.add(camera);
+
+  var PAL_N = { 0: [214, 209, 199], 1: [196, 210, 220], 2: [236, 232, 222], 3: [198, 100, 84], 4: [228, 226, 221], 5: [210, 212, 208] };
+  var PAL_A = { 0: [236, 223, 200], 1: [159, 195, 218], 2: [245, 241, 230], 3: [184, 71, 59], 4: [234, 226, 207], 5: [195, 205, 203] };
+
+  function charger(u, t) { return fetch(u).then(function (r) { return t === 'json' ? r.json() : r.arrayBuffer(); }); }
+  Promise.all([charger('../docs/donnees/manifeste.json', 'json'), charger('../docs/donnees/os.bin'), charger('../docs/donnees/muscles.bin'),
+    charger('../docs/donnees/ao-os.bin'), charger('../docs/donnees/ao-muscles.bin'), Promise.resolve({}), Promise.resolve(new ArrayBuffer(0)), charger('../docs/donnees/fibres-s.bin')]).then(function (r) {
+    var M = r[0], bufs = { os: r[1], muscles: r[2] }, aos = { os: new Uint8Array(r[3]), muscles: new Uint8Array(r[4]) }, fibres = r[5], champ = new Int8Array(r[6]), coordS = new Float32Array(r[7]), offF = 0;
+    var g = new THREE.Group(); g.scale.setScalar(M.echelle); g.position.fromArray(M.centre); scene.add(g);
+    var off = { os: 0, muscles: 0 };
+    var niveau = q.niveau ? +q.niveau : 3;
+    M.pieces.forEach(function (p) {
+      var cle = p.couche === 'os' ? 'os' : p.couche === 'muscles' ? 'muscles' : null;
+      if (!cle) return;
+      var aoTab = aos[cle].subarray(off[cle], off[cle] + p.vc); off[cle] += p.vc;
+      var champP = null, sP = null; if (cle === 'muscles') { champP = champ.subarray(offF * 3, (offF + p.vc) * 3); sP = coordS.subarray(offF, offF + p.vc); offF += p.vc; }
+      if (p.couche === 'muscles' && !(p.prof <= niveau) && (!q.cote || p.cote === q.cote)) return;
+      var b = bufs[p.paquet], o = p.o;
+      var pos = new Int16Array(b, o, p.vc * 3), nm = new Int8Array(b, o + p.ob[0], p.vc * 3), cls = new Uint8Array(b, o + p.ob[0] + p.ob[1], p.vc);
+      var io = o + p.ob[0] + p.ob[1] + p.ob[2];
+      var idx = p.u32 ? new Uint32Array(b, io, p.ic) : new Uint16Array(b, io, p.ic);
+      var col = new Uint8Array(p.vc * 3), tis = new Uint8Array(p.vc), fib = new Int8Array(p.vc * 3);
+      var ax = fibres[p.id] || [0, 1, 0];
+      var teinte = p.couche === 'muscles' ? 0.94 + ((p.id * 2654435761) % 1000) / 1000 * 0.12 : 1;
+      for (var v = 0; v < p.vc; v++) {
+        var k = cls[v], c = (nouveau ? PAL_N : PAL_A)[k] || [200, 200, 200], f = k === 3 ? teinte : 1;
+        col[v * 3] = Math.min(255, c[0] * f); col[v * 3 + 1] = Math.min(255, c[1] * f); col[v * 3 + 2] = Math.min(255, c[2] * f);
+        tis[v] = k === 3 ? 255 : 0;
+        if (champP) { fib[v * 3] = champP[v * 3]; fib[v * 3 + 1] = champP[v * 3 + 1]; fib[v * 3 + 2] = champP[v * 3 + 2]; }
+        else { fib[v * 3] = ax[0] * 127; fib[v * 3 + 1] = ax[1] * 127; fib[v * 3 + 2] = ax[2] * 127; }
+      }
+      var geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      geo.setAttribute('normal', new THREE.BufferAttribute(nm, 3, true));
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3, true));
+      geo.setAttribute('ao', new THREE.BufferAttribute(new Uint8Array(aoTab), 1, true));
+      geo.setAttribute('tissu', new THREE.BufferAttribute(tis, 1, true));
+      geo.setAttribute('fibre', new THREE.BufferAttribute(fib, 3, true));
+      geo.setAttribute('fs', new THREE.BufferAttribute(sP ? new Float32Array(sP) : new Float32Array(p.vc), 1));
+      geo.setIndex(new THREE.BufferAttribute(idx, 1));
+      var mesh = new THREE.Mesh(geo, nouveau ? mat : matAncien);
+      g.add(mesh);
+    });
+    var cible = (q.cible || '0,92,0').split(',').map(Number), dir = (q.dir || '0,0.05,1').split(',').map(Number), dist = +(q.dist || 300);
+    var d = new THREE.Vector3().fromArray(dir).normalize();
+    camera.position.fromArray(cible).addScaledVector(d, dist); camera.lookAt(new THREE.Vector3().fromArray(cible));
+    renderer.render(scene, camera);
+    document.title = 'pret';
+  });
+})();
+</script>
+</body>
+</html>
