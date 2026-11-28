@@ -7,7 +7,10 @@ var FICHIERS = [
 ].concat(['os', 'muscles', 'articulations', 'nerfs', 'peau', 'insertions', 'cardio', 'visceres', 'lymphatique', 'encephale', 'sens', 'ao-os', 'ao-muscles', 'fibres-s'].map(function (n) {
   return 'donnees/' + n + '.bin?v=1.3.0';
 }));
-// Régions détaillées (docs/donnees/<region>/) : seulement les paquets présents dans chaque région
+// Régions détaillées (docs/donnees/<region>/) : seulement les paquets présents dans chaque région.
+// Elles ne sont PAS mises en cache à l'installation (≈ 52 Mo, trop pour l'iPad mini 2 d'un coup) :
+// chaque région est gardée à sa première ouverture, par le gestionnaire « fetch » ci-dessous.
+var A_LA_DEMANDE = [];
 var REGIONS = {
   'tete-cou': ['os', 'muscles', 'articulations', 'nerfs', 'peau', 'insertions', 'cardio', 'visceres', 'lymphatique', 'encephale', 'sens'],
   'tronc': ['os', 'muscles', 'articulations', 'nerfs', 'peau', 'insertions', 'cardio', 'visceres', 'lymphatique'],
@@ -15,8 +18,8 @@ var REGIONS = {
   'membre-inferieur': ['os', 'muscles', 'articulations', 'nerfs', 'peau', 'insertions', 'cardio', 'lymphatique']
 };
 Object.keys(REGIONS).forEach(function (r) {
-  FICHIERS.push('donnees/' + r + '/manifeste.json?v=1.2.1', 'donnees/' + r + '/fiches.json?v=1.2.1');
-  REGIONS[r].concat(['ao-os', 'ao-muscles', 'fibres-s']).forEach(function (n) { FICHIERS.push('donnees/' + r + '/' + n + '.bin?v=1.2.1'); });
+  A_LA_DEMANDE.push('donnees/' + r + '/manifeste.json?v=1.3.0', 'donnees/' + r + '/fiches.json?v=1.3.0');
+  REGIONS[r].concat(['ao-os', 'ao-muscles', 'fibres-s']).forEach(function (n) { A_LA_DEMANDE.push('donnees/' + r + '/' + n + '.bin?v=1.3.0'); });
 });
 
 self.addEventListener('install', function (e) {

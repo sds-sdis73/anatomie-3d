@@ -339,5 +339,23 @@ export default async function (nav, url) {
   await ui.region(pa, 'corps');
   r.ok(!(await ui.surAccueil(pa)) && (await lire(pa)).visibles.muscles > 100, 'revenir à l’accueil puis choisir « Corps entier » réaffiche le corps');
   await pa.close();
+
+  // ---- chaque région détaillée réellement chargée (quand son dossier existe)
+  const { page: pr, erreurs: errR } = await ouvrirAppli(nav, url, { accueil: true });
+  for (const reg of ['tete-cou', 'tronc', 'membre-superieur', 'membre-inferieur']) {
+    if (!fs.existsSync(path.join(DOCS, 'donnees', reg, 'manifeste.json'))) continue;
+    await ui.region(pr, reg);
+    const etatR = await pr.evaluate(() => ({ jeu: window.__anatomie.jeu() }));
+    const vis = (await lire(pr)).visibles, info = (await lire(pr)).info;
+    r.ok(etatR.jeu.dossier === reg + '/' && etatR.jeu.pieces > 300, reg + ' : jeu détaillé chargé (' + etatR.jeu.pieces + ' pièces)', JSON.stringify(etatR.jeu));
+    r.ok(vis.os > 10 && vis.muscles > 10, reg + ' : os et muscles affichés', JSON.stringify(vis));
+    r.ok(info.triangles <= 650000 && info.appels <= 1000, reg + ' : ' + Math.round(info.triangles / 1000) + ' k triangles, ' + info.appels + ' appels de dessin (budgets 650 k / 1000)');
+    // toucher le centre de l'écran nomme une structure de la région
+    const vise = await pr.evaluate(() => { for (let dx = 0; dx <= 160; dx += 40) for (const s of [1, -1]) { const h = window.__anatomie.viser(560 + s * dx, 384); if (h) return { x: 560 + s * dx, h }; } return null; });
+    if (vise) { await toucher(pr, vise.x, 384); const nomR = await ui.nomSelection(pr); r.ok(nomR && nomR.indexOf(vise.h.fr) === 0, reg + ' : toucher une structure affiche son nom', (nomR || '') + ' / ' + vise.h.fr); }
+    else r.ok(false, reg + ' : une structure est visible au centre de l’écran');
+  }
+  r.ok(!errR.length, 'régions détaillées : aucune erreur pendant leur chargement', errR.slice(0, 4).join(' | '));
+  await pr.close();
   return r;
 }

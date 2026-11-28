@@ -90,8 +90,14 @@ r.ok(!oublies.length, 'tous les fichiers de données sont mis en cache pour le h
 const bac = { self: { addEventListener() {} }, caches: {}, location: {} };
 vm.runInNewContext(sw, bac);
 const liste = Array.isArray(bac.FICHIERS) ? bac.FICHIERS : [];
-r.ok(liste.length > 0, 'sw.js : liste des fichiers lisible (' + liste.length + ' fichiers)');
-const donneesSw = liste.filter(f => /^donnees\//.test(f));
+const demande = Array.isArray(bac.A_LA_DEMANDE) ? bac.A_LA_DEMANDE : [];
+r.ok(liste.length > 0, 'sw.js : liste des fichiers lisible (' + liste.length + ' à l’installation, ' + demande.length + ' à la demande)');
+// ce qui est téléchargé à l'installation doit rester supportable pour l'iPad mini 2 (quota de stockage de Safari 12)
+const octetsInstall = liste.map(f => path.join(DOCS, f.split('?')[0] === './' ? 'index.html' : f.split('?')[0])).filter(f => fs.existsSync(f)).reduce((s, f) => s + fs.statSync(f).size, 0);
+r.ok(octetsInstall <= 30e6, (octetsInstall / 1e6).toFixed(1) + ' Mo mis en cache à l’installation (budget 30 Mo)');
+r.ok(demande.every(f => liste.indexOf(f) < 0), 'les régions ne sont pas mises en cache à l’installation (seulement à leur première ouverture)');
+r.ok(/caches\.open\(CACHE\)\.then\(function \(c\) \{ c\.put\(/.test(sw), 'sw.js garde en cache tout fichier téléchargé (régions à la première ouverture)');
+const donneesSw = liste.concat(demande).filter(f => /^donnees\//.test(f));
 const absents = donneesSw.filter(f => !fs.existsSync(path.join(DOCS, f.split('?')[0])));
 r.ok(!absents.length, 'sw.js : chaque fichier de données mis en cache existe', absents.slice(0, 5).join(', '));
 const malVersionnes = donneesSw.filter(f => f.split('?v=')[1] !== V);
