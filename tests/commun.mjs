@@ -9,7 +9,7 @@ export const RACINE = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
 export const DOCS = path.join(RACINE, 'docs');
 export const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.bin': 'application/octet-stream' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.bin': 'application/octet-stream', '.jpg': 'image/jpeg' };
 
 // Serveur statique minimal pour docs/
 export function demarrerServeur(dossier = DOCS) {
@@ -32,7 +32,9 @@ export async function lancerNavigateur() {
 }
 
 // Ouvre l'appli au format iPad mini (1024×768, écran tactile) et attend la fin du chargement.
-export async function ouvrirAppli(nav, url, { tactile = true, largeur = 1024, hauteur = 768 } = {}) {
+// Depuis la 1.3, l'appli s'ouvre sur l'écran d'accueil : sauf « accueil: true », on entre dans le corps entier
+// (le choix de l'élément à toucher reste dans interface.mjs).
+export async function ouvrirAppli(nav, url, { tactile = true, largeur = 1024, hauteur = 768, accueil = false, avantChargement = null } = {}) {
   const page = await nav.newPage();
   const erreurs = [];
   page.on('console', m => { if (m.type() === 'error') erreurs.push('console : ' + m.text()); });
@@ -40,9 +42,11 @@ export async function ouvrirAppli(nav, url, { tactile = true, largeur = 1024, ha
   page.on('response', rep => { if (rep.status() >= 400) erreurs.push('HTTP ' + rep.status() + ' : ' + rep.url()); });
   page.on('dialog', d => d.accept(d.type() === 'prompt' ? 'Vue de test' : undefined));
   await page.setViewport({ width: largeur, height: hauteur, deviceScaleFactor: 2, hasTouch: tactile, isMobile: tactile });
+  if (avantChargement) await avantChargement(page);
   await page.goto(url, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__anatomie && window.__anatomie.pret, { timeout: 60000 });
   await attendre(400);
+  if (!accueil) { const { ui } = await import('./interface.mjs'); await ui.entrer(page); }
   return { page, erreurs };
 }
 
@@ -67,6 +71,29 @@ export async function toucher(page, x, y) {
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await cdp.detach();
   await attendre(350);
+}
+
+// Appui long d'un doigt (ms millisecondes sans bouger)
+export async function appuiLong(page, x, y, ms = 800) {
+  const cdp = await page.target().createCDPSession();
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 0 }] });
+  await attendre(ms);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await cdp.detach();
+  await attendre(300);
+}
+
+// Deux touchers rapides au même endroit
+export async function doubleToucher(page, x, y) {
+  const cdp = await page.target().createCDPSession();
+  for (let k = 0; k < 2; k++) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 0 }] });
+    await attendre(40);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    if (!k) await attendre(90);
+  }
+  await cdp.detach();
+  await attendre(900);
 }
 
 // Collecteur de résultats
