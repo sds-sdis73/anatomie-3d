@@ -197,7 +197,7 @@
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     calque.width = w * pr; calque.height = h * pr;
-    tailleEtiq = null;
+    tailleEtiq = null; largCouches = -1;
     redessinerEcran();
     demanderRendu();
   }
@@ -683,7 +683,7 @@
 
   // ---------- Étiquette accrochée ----------
   var etiq = el('etiquette'), fil = el('fil'), filTrait = el('fil-trait'), filPoint = el('fil-point');
-  var tailleEtiq = null, vEtiq = new THREE.Vector3();
+  var tailleEtiq = null, largCouches = -1, vEtiq = new THREE.Vector3();
   function majEtiquette() {
     var p = etat.sel;
     if (!p) { etiq.classList.add('cache'); fil.classList.add('cache'); el('legende-ins').classList.add('cache'); return; }
@@ -722,7 +722,8 @@
     vEtiq.copy(ancre).project(camera);
     var devant = vEtiq.z < 1 && Math.abs(vEtiq.x) < 1.3 && Math.abs(vEtiq.y) < 1.3;
     var px = (vEtiq.x + 1) / 2 * W, py = (1 - vEtiq.y) / 2 * H;
-    var larg = el('couches').offsetWidth;
+    if (largCouches < 0) largCouches = el('couches').offsetWidth; // lu une fois par taille d'écran, pas à chaque image
+    var larg = largCouches;
     var gauche = 12, droite = Math.max(gauche, W - (larg ? larg + 24 : 12) - w), haut = 74, bas = Math.max(haut, H - 92 - h);
     var aGauche = px - 70 - w >= gauche;
     var lx = aGauche ? px - 70 - w : px + 70, ly = py - h / 2 - 50;
@@ -1017,7 +1018,7 @@
       var c = COUCHES[i];
       classe(rangsDom[i], 'ote', i < etat.regle && !etat.force[c]);
       classe(rangsDom[i], 'seule', !!(etat.seule && etat.seule.i === i));
-      classe(rangsDom[i].querySelector('.oeil'), 'on', presente(i, '') && (i !== 0 || true));
+      classe(rangsDom[i].querySelector('.oeil'), 'on', presente(i, ''));
     }
     var os = document.querySelectorAll('#systemes .oeil');
     for (var j = 0; j < os.length; j++) {

@@ -260,6 +260,46 @@ export default async function (nav, url) {
   await ui.coupe(page, null);
   r.ok(await page.evaluate(() => !window.__anatomie.etat.coupe) && (await page.evaluate(() => window.__anatomie.visibles())) === nCoupe0, '« Sans coupe » rend tout le corps');
 
+  // ---- sélection multiple et transparence
+  await ui.accueil(page);
+  const deux = await page.evaluate(() => { const a = window.__anatomie, l = []; for (let x = 430; x < 640 && l.length < 2; x += 12) { const h = a.viser(x, 330); if (h && !l.some(q => q[2] === h.id)) l.push([x, 330, h.id]); } return l; });
+  await ui.multi(page);
+  for (const q of deux) await toucher(page, q[0], q[1]);
+  const nomMulti = await ui.nomSelection(page);
+  r.ok(deux.length === 2 && /^2 structures/.test(nomMulti || ''), '« Plusieurs » : deux structures touchées sont sélectionnées ensemble', nomMulti);
+  await ui.action(page, 'transparent');
+  const nbTransp = await page.evaluate(() => Object.keys(window.__anatomie.etat.transp).length);
+  r.ok(nbTransp === 2, '« Transparent » rend transparentes les structures sélectionnées', nbTransp + ' transparente(s)');
+  await ui.multi(page);
+  await ui.toutReafficher(page);
+  r.ok(await page.evaluate(() => !Object.keys(window.__anatomie.etat.transp).length), '« Tout voir » rend les structures opaques');
+
+  // ---- réglages : nom secondaire, endoscope, fibres
+  await ui.ouvrirPanneau(page, 'reglages');
+  await page.evaluate(() => document.querySelector('#choix-langue [data-l="la"]').click());
+  await ui.fermerPanneaux(page);
+  await ui.chercher(page, 'femur'); await ui.premierResultat(page);
+  const latin = await page.evaluate(() => document.getElementById('etiq-nom2').textContent);
+  r.ok(/femor|femur/i.test(latin), 'le nom secondaire latin s’affiche sous le nom', latin);
+  await ui.ouvrirPanneau(page, 'reglages');
+  await page.evaluate(() => document.querySelector('#choix-langue [data-l=""]').click());
+  await ui.fermerPanneaux(page);
+  await ui.basculer(page, 'endoscope');
+  const endo = await page.evaluate(() => window.__anatomie.etat.endoscope);
+  await ui.basculer(page, 'endoscope');
+  r.ok(endo && !(await page.evaluate(() => window.__anatomie.etat.endoscope)), 'la lumière d’endoscope s’allume et s’éteint depuis les réglages');
+  await ui.basculer(page, 'fibres');
+  const fib = await page.evaluate(() => localStorage.getItem('anatomie3d.fibres'));
+  await ui.basculer(page, 'fibres');
+  r.ok(fib === '0' && (await page.evaluate(() => localStorage.getItem('anatomie3d.fibres'))) === '1', 'les fibres musculaires se désactivent puis se réactivent depuis les réglages');
+
+  // ---- quiz depuis l'accueil
+  await page.evaluate(() => document.getElementById('b-accueil').click()); await attendre(300);
+  await page.evaluate(() => document.querySelector('#puces-sys [data-action="quiz"]').click());
+  await page.waitForFunction(() => !!window.__anatomie.etat.quiz, { timeout: 5000 }).catch(() => {});
+  r.ok(await page.evaluate(() => !!window.__anatomie.etat.quiz && !window.__anatomie.surAccueil()), 'le quiz se lance depuis l’écran d’accueil', await ui.questionQuiz(page));
+  await ui.finQuiz(page);
+
   // ---- performance au démarrage (vue d'ensemble)
   await ui.accueil(page);
   const info = (await lire(page)).info;
