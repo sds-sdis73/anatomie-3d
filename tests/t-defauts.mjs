@@ -260,8 +260,105 @@ export default async function (nav, url) {
     const ok = await page.evaluate(() => { const a = window.__anatomie, b = a.boiteRegion ? a.boiteRegion() : null; if (!b) return false; const v = new THREE.Vector3((b[0][0] + b[1][0]) / 2, (b[0][1] + b[1][1]) / 2, (b[0][2] + b[1][2]) / 2).project(a.camera); return Math.abs(v.x) < 0.5 && Math.abs(v.y) < 0.5; });
     r.ok(ok, '« Tout voir » recadre la région après une rotation');
   });
+  // =================== Seconde série (contre-vérification) ===================
+  // ---------- N1. Étiquette après un appui long ----------
+  await section(r, 'N1', async () => {
+    await ui.region(page, 'corps');
+    await appuiLong(page, cx, cy);
+    await toucher(page, 150, 620); // toucher le fond ferme le menu
+    await attendre(300);
+    const e = await page.evaluate(() => {
+      const r2 = document.getElementById('etiquette').getBoundingClientRect(), c = document.getElementById('couches').getBoundingClientRect();
+      return { l: Math.round(r2.left), t: Math.round(r2.top), w: Math.round(r2.width), h: Math.round(r2.height), couches: Math.round(c.left), menu: !document.getElementById('menu-appui').classList.contains('cache') };
+    });
+    const surPoint = cx >= e.l && cx <= e.l + e.w && cy >= e.t && cy <= e.t + e.h;
+    r.ok(!e.menu && e.w > 0 && e.l + e.w <= e.couches && !surPoint, 'après un appui long, l’étiquette est bien placée (ni sur la règle ni sur le point visé)', JSON.stringify(e));
+    await ui.action(page, 'fermer');
+  });
+
+  // ---------- N2. Coupe sagittale selon la région ----------
+  await section(r, 'N2', async () => {
+    await ui.region(page, 'membre-inferieur');
+    await ui.coupe(page, 'sagittal');
+    const mi = await page.evaluate(() => {
+      const a = window.__anatomie, w = a.planCoupe()[3]; let coupees = 0;
+      // un fémur visible dont l'axe passe à moins de 4 cm du plan : la jambe est tranchée, pas retirée entière
+      a.scene.traverse(o => { const p = o.userData && o.userData.p; if (o.isMesh && o.visible && p && p.en === 'Femur' && Math.abs(p.c[0] - w) < 4) coupees++; });
+      return { w: Math.round(w * 10) / 10, coupees };
+    });
+    r.ok(mi.coupees > 0, 'membre inférieur : la coupe sagittale tranche une jambe (un fémur est coupé par le plan)', JSON.stringify(mi));
+    await ui.coupe(page, null);
+    await ui.region(page, 'tronc');
+    await ui.coupe(page, 'sagittal');
+    const wt = await page.evaluate(() => window.__anatomie.planCoupe()[3]);
+    r.ok(Math.abs(wt) < 1, 'tronc : la coupe sagittale reste sur la ligne médiane', 'x = ' + wt);
+    await ui.coupe(page, null);
+  });
+
+  // ---------- N3. Pas de bande claire sur les faces vues de face près du plan ----------
+  await section(r, 'N3', async () => {
+    await ui.region(page, 'corps');
+    await page.evaluate(() => { const a = window.__anatomie; a.controls.target.set(0, 105, 0); a.camera.position.set(0, 107, 90); a.controls.update(); });
+    await attendre(300);
+    const pts = await page.evaluate(() => { const a = window.__anatomie, l = []; for (let y = 80; y < 680; y += 12) for (let x = 380; x < 660; x += 2) { const h = a.viser(x, y); if (h && h.couche === 'muscles' && h.point[0] < -0.4 && h.point[0] > -3.5) l.push([x, y]); } return l; });
+    const lum = () => page.evaluate(l => l.map(p => { const c = window.__anatomie.couleur(p[0], p[1]); return c[0] + c[1] + c[2]; }), pts);
+    const sans = await lum();
+    await ui.coupe(page, 'sagittal');
+    await page.evaluate(() => { const a = window.__anatomie; a.controls.target.set(0, 105, 0); a.camera.position.set(0, 107, 90); a.controls.update(); });
+    await attendre(300);
+    const avec = await lum();
+    // part des points éclaircis de plus de 8 % : une bande claire en ferait monter beaucoup
+    const eclaircis = sans.filter((v, i) => avec[i] > v * 1.08 + 3).length / Math.max(1, sans.length);
+    r.ok(pts.length > 50 && eclaircis < 0.03, 'coupe : un muscle vu de face près du plan garde sa luminosité (pas de bande claire)', pts.length + ' points, ' + (eclaircis * 100).toFixed(1) + ' % éclaircis');
+    await ui.coupe(page, null);
+  });
+
+  // ---------- N5. Œil « Organes » quand seuls certains organes existent ----------
+  await section(r, 'N5', async () => {
+    await ui.region(page, 'tete-cou');
+    await page.evaluate(() => document.querySelector('#systemes .oeil[data-s="organes"]').click()); await attendre(800);
+    const c = await page.evaluate(() => document.querySelector('#systemes .oeil[data-s="organes"]').className);
+    r.ok(/\bon\b/.test(c) && !/partiel/.test(c), 'tête et cou : l’œil « Organes » s’allume entièrement quand tous les organes présents sont affichés', c);
+    await page.evaluate(() => document.querySelector('#systemes .oeil[data-s="organes"]').click()); await attendre(300);
+  });
+
+  // ---------- N6. Menu de l'appui long en mode « Plusieurs » ----------
+  await section(r, 'N6', async () => {
+    await ui.region(page, 'corps');
+    const deux = await page.evaluate(() => { const a = window.__anatomie, l = []; for (let x = 430; x < 640 && l.length < 2; x += 12) { const h = a.viser(x, 330); if (h && !l.some(q => q[2] === h.id)) l.push([x, 330, h.id]); } return l; });
+    await ui.multi(page);
+    await toucher(page, deux[0][0], deux[0][1]);
+    await appuiLong(page, deux[1][0], deux[1][1]);
+    const m = await page.evaluate(() => ({ nom: document.getElementById('menu-nom').textContent, fiche: document.querySelector('#menu-appui [data-m="fiche"]').disabled }));
+    r.ok(/^2 structures/.test(m.nom) && m.fiche, '« Plusieurs » : le menu de l’appui long annonce les deux structures et désactive la fiche', JSON.stringify(m));
+    await toucher(page, 150, 620);
+    await ui.multi(page);
+    await ui.action(page, 'fermer').catch(() => {});
+  });
+
+  // ---------- 14 (suite). touch-action sur l'étiquette, le bandeau d'état et les panneaux ----------
+  await section(r, '14b', async () => {
+    const ta = await page.evaluate(() => ['etiquette', 'etat', 'p-vues'].map(id => getComputedStyle(document.getElementById(id)).touchAction));
+    r.ok(ta.every(t => t === 'manipulation'), 'étiquette, bandeau d’état et panneaux : touch-action manipulation', ta.join(', '));
+  });
+
   r.ok(!erreurs.length, 'défauts d’interface : aucune erreur dans la console', erreurs.slice(0, 4).join(' | '));
   await page.close();
+
+  // ---------- N4. Un fichier de région n'est téléchargé qu'une fois ----------
+  await section(r, 'N4', async () => {
+    const srv = await demarrerServeur(); // origine neuve : rien en cache
+    const vus = {};
+    const { page: pg } = await ouvrirAppli(nav, srv.url, { accueil: true, avantChargement: async p => {
+      p.on('request', q => { const m = q.url().match(/donnees\/membre-superieur\/(os|muscles)\.bin/); if (m) vus[m[1]] = (vus[m[1]] || 0) + 1; });
+    } });
+    await ui.region(pg, 'membre-superieur');
+    await pg.waitForFunction(() => window.__anatomie.regionGardee('membre-superieur/') === 'complète', { timeout: 30000 }).catch(() => {});
+    await attendre(500);
+    r.ok(vus.os === 1 && vus.muscles === 1, 'première ouverture d’une région : chaque fichier n’est téléchargé qu’une fois', JSON.stringify(vus));
+    r.ok(await pg.evaluate(() => window.__anatomie.regionGardee('membre-superieur/')) === 'complète', 'la région est quand même gardée entière');
+    await pg.close(); srv.fermer();
+  });
 
   // ---------- 8 et 9. Premier lancement et erreur passagère ----------
   await section(r, '8', async () => {

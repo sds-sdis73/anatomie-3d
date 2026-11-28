@@ -235,16 +235,22 @@
     t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true;
     return t;
   }
-  var VS = [
-    'precision highp float;',
-    'uniform mat4 modelMatrix, modelViewMatrix, projectionMatrix; uniform mat3 normalMatrix;',
-    'attribute vec3 position, normal, color; attribute float ao, tissu, fs;',
-    'varying vec3 vN, vC, vP; varying float vAo, vT, vS;',
-    'void main() {',
-    '  vP = (modelMatrix * vec4(position, 1.0)).xyz;',
-    '  vN = normalize(normalMatrix * normal); vC = color; vAo = ao; vT = tissu; vS = fs;',
-    '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
-    '}'].join('\n');
+  // Variante « coupe » : transmet aussi la normale en repère monde (vNm), pour savoir si une surface regarde la partie retirée
+  function construireVS(avecCoupe) {
+    return [
+      'precision highp float;',
+      'uniform mat4 modelMatrix, modelViewMatrix, projectionMatrix; uniform mat3 normalMatrix;',
+      'attribute vec3 position, normal, color; attribute float ao, tissu, fs;',
+      'varying vec3 vN, vC, vP; varying float vAo, vT, vS;',
+      avecCoupe ? 'varying vec3 vNm;' : '',
+      'void main() {',
+      '  vP = (modelMatrix * vec4(position, 1.0)).xyz;',
+      '  vN = normalize(normalMatrix * normal); vC = color; vAo = ao; vT = tissu; vS = fs;',
+      avecCoupe ? '  vNm = mat3(modelMatrix) * normal;' : '',
+      '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+      '}'].join('\n');
+  }
+  var VS = construireVS(false), VS_COUPE = construireVS(true);
   // Deux variantes du même shader : sans coupe (celle de la 1.2, inchangée) et avec coupe.
   // La variante avec coupe contient un « discard » : sur la puce de l'iPad mini 2, sa seule présence prive le GPU
   // de l'élimination des surfaces cachées ; on ne l'utilise donc que lorsqu'une coupe est posée.
@@ -253,7 +259,7 @@
       derivees ? '#extension GL_OES_standard_derivatives : enable' : '',
       'precision highp float;',
       'uniform sampler2D matcap; uniform float fibresOn, endo, opacite; uniform vec3 ajout; uniform vec2 ecran;',
-      avecCoupe ? 'uniform vec4 coupe;' : '',
+      avecCoupe ? 'uniform vec4 coupe; uniform vec3 cameraPosition; varying vec3 vNm;' : '',
       'varying vec3 vN, vC, vP; varying float vAo, vT, vS;',
       'float h(float n) { return fract(sin(n * 0.1031 + 7.13) * 43758.5453); }',
       'float bruit(float x) { float i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(h(i), h(i + 1.0), f); }',
@@ -279,8 +285,11 @@
       '  }'].join('\n') : '',
       '  float occ = mix(0.15, 1.0, pow(clamp(vAo, 0.0, 1.0), 1.5));',
       // près du plan de coupe, les creux mis à nu (canal vertébral, intérieur du crâne) gardaient l'ombre calculée pour le
-      // corps fermé et paraissaient noirs : on relève cette ombre sur les 4 cm qui bordent la coupe
-      avecCoupe ? '  occ = mix(occ, max(occ, 0.8), 1.0 - smoothstep(0.0, 4.0, coupe.w - dot(vP, coupe.xyz)));' : '',
+      // corps fermé et paraissaient noirs : on relève cette ombre sur les 4 cm qui bordent la coupe, seulement pour les
+      // surfaces qu'on regarde à travers la coupe (caméra du côté retiré) ou tournées vers la partie retirée ;
+      // un muscle vu de face, caméra du côté conservé ou dans le plan, n'est pas éclairci (pas de bande claire)
+      avecCoupe ? '  occ = mix(occ, max(occ, 0.8), (1.0 - smoothstep(0.0, 4.0, coupe.w - dot(vP, coupe.xyz)))'
+        + ' * max(smoothstep(0.15, 0.5, dot(normalize(vNm), coupe.xyz)), smoothstep(0.0, 8.0, dot(cameraPosition, coupe.xyz) - coupe.w)));' : '',
       '  vec3 col = alb * m.rgb * 1.4 * occ + vec3(m.a) * brille * occ + ajout;',
       // face intérieure vue à travers la coupe : teinte unie de la tranche
       avecCoupe ? '  if (!gl_FrontFacing) col = vC * vec3(0.66, 0.6, 0.58) + ajout;' : '',
@@ -322,7 +331,7 @@
     shaderCoupe = on;
     for (var k in MAT) {
       var m = MAT[k];
-      m.fragmentShader = on ? FS_COUPE : FS;
+      m.fragmentShader = on ? FS_COUPE : FS; m.vertexShader = on ? VS_COUPE : VS;
       m.side = on && m.userData.cotePlein ? THREE.DoubleSide : m.userData.side;
       m.needsUpdate = true;
     }
@@ -485,6 +494,8 @@
     jeuEnCours = dossier; requetesJeu = [];
     DONNEES = 'donnees/' + dossier;
     V_JEU = versionPour(dossier);
+    var fichiersRecus = {}; // fichiers reçus (région) : rangés tels quels dans le cache des régions, sans second téléchargement
+    function garder(nom, corps, type) { if (dossier && corps) fichiersRecus[DONNEES + nom + '?v=' + V_JEU] = { corps: corps, type: type }; }
     var tailles = {}, recus = {};
     function maj() {
       var t = 0, r = 0;
@@ -497,6 +508,7 @@
       verifierJeu(dossier, gen);
       M = lireJSON(man);
       if (!M || !M.pieces) throw erreur('manifeste illisible', -1);
+      garder('manifeste.json', JSON.stringify(M), 'application/json');
       groupe = new THREE.Group();
       groupe.scale.setScalar(M.echelle);
       groupe.position.set(M.centre[0], M.centre[1], M.centre[2]);
@@ -506,10 +518,14 @@
       var presents = PAQUETS.filter(function (n) { return tailles[n]; }); // une région peut ne pas avoir de peau, de nerfs…
       var details = Promise.all(['ao-os', 'ao-muscles', 'fibres-s'].map(function (n) {
         return charger(DONNEES + n + '.bin?v=' + V_JEU, 'arraybuffer', null, 0, requetesJeu).catch(function () { return null; });
-      })).then(function (b) { preparerAO({ os: b[0], muscles: b[1], fs: b[2] }); });
+      })).then(function (b) {
+        ['ao-os', 'ao-muscles', 'fibres-s'].forEach(function (n, i) { garder(n + '.bin', b[i], 'application/octet-stream'); });
+        preparerAO({ os: b[0], muscles: b[1], fs: b[2] });
+      });
       return Promise.all([details].concat(presents.map(function (nom) {
         return charger(DONNEES + nom + '.bin?v=' + V_JEU, 'arraybuffer', function (l) { recus[nom] = l; maj(); }, tailles[nom], requetesJeu).then(function (buf) {
           recus[nom] = tailles[nom]; maj();
+          garder(nom + '.bin', buf, 'application/octet-stream');
           return { nom: nom, buf: buf };
         });
       }))).then(function (r) { return r.slice(1); });
@@ -538,15 +554,16 @@
       boite = calculerBoite();
       majVuesRegions();
       majVisibilite();
-      charger(DONNEES + 'fiches.json?v=' + V_JEU, 'json').then(function (f) {
+      var fichesP = charger(DONNEES + 'fiches.json?v=' + V_JEU, 'json').then(function (f) {
         if (gen === jeu.gen) { fiches = lireJSON(f); majEtiquette(); }
+        garder('fiches.json', JSON.stringify(lireJSON(f)), 'application/json');
       }, function () {});
       construireIndexRecherche();
       el('accueil-prog').classList.add('pret');
       progression(1, 'Modèle prêt.');
       sonde.journal.push(dossier);
       sonde.pret = true;
-      if (dossier) garderRegion(dossier);
+      if (dossier) fichesP.then(function () { garderRegion(dossier, fichiersRecus); });
     }, function (e) {
       // jeu inutilisable : on le libère pour que le suivant parte d'un état propre
       if (gen === jeu.gen) { jeuEnCours = null; requetesJeu = []; viderJeu(); }
@@ -573,7 +590,8 @@
     M.pieces.forEach(function (p) { paq[p.paquet] = true; });
     return l.concat(Object.keys(paq).map(function (n) { return n + '.bin'; })).map(function (f) { return 'donnees/' + dossier + f + '?v=' + DONNEES_REGIONS; });
   }
-  function garderRegion(dossier) {
+  function garderRegion(dossier, recus) {
+    recus = recus || {};
     if (!window.caches || gardes[dossier] === 'en cours' || gardes[dossier] === 'complète') return;
     var urls = fichiersRegion(dossier), cache = null;
     gardes[dossier] = 'en cours';
@@ -585,9 +603,11 @@
       // un fichier après l'autre : la mémoire de l'iPad mini 2 est comptée
       return manquants.reduce(function (suite, u) {
         return suite.then(function () {
-          return fetch(u).then(function (rep) {
-            if (!rep.ok) throw erreur('absent : ' + u, rep.status);
-            return cache.put(u, rep).catch(function () { var e = erreur('mémoire pleine', -2); e.quota = true; throw e; });
+          var deja = recus[u]; // déjà reçu par le chargement : pas de second téléchargement
+          var rep = deja ? Promise.resolve(new Response(deja.corps, { headers: { 'Content-Type': deja.type } })) : fetch(u);
+          return rep.then(function (r2) {
+            if (!r2.ok) throw erreur('absent : ' + u, r2.status);
+            return cache.put(u, r2).catch(function () { var e = erreur('mémoire pleine', -2); e.quota = true; throw e; });
           });
         });
       }, Promise.resolve());
@@ -829,7 +849,8 @@
   function placerEtiquette() {
     if (!etat.sel || etiq.classList.contains('cache')) return;
     var W = window.innerWidth, H = window.innerHeight;
-    if (!tailleEtiq) tailleEtiq = [etiq.offsetWidth, etiq.offsetHeight];
+    // étiquette masquée (menu de l'appui long ouvert) : taille nulle, qu'on ne mémorise surtout pas
+    if (!tailleEtiq) { if (!etiq.offsetWidth) return; tailleEtiq = [etiq.offsetWidth, etiq.offsetHeight]; }
     var w = tailleEtiq[0], h = tailleEtiq[1];
     vEtiq.copy(ancre).project(camera);
     var devant = vEtiq.z < 1 && Math.abs(vEtiq.x) < 1.3 && Math.abs(vEtiq.y) < 1.3;
@@ -1151,8 +1172,10 @@
     for (var j = 0; j < os.length; j++) {
       var s = os[j].getAttribute('data-s');
       if (s === 'organes') {
-        var n = ORGANES.filter(function (o) { return etat[o]; }).length;
-        classe(os[j], 'on', n === ORGANES.length); classe(os[j], 'partiel', n > 0 && n < ORGANES.length);
+        // seuls comptent les organes présents dans le jeu chargé (la tête n'a ni reins ni organes génitaux)
+        var dispo = M ? ORGANES.filter(systemePresent) : ORGANES;
+        var n = dispo.filter(function (o) { return etat[o]; }).length;
+        classe(os[j], 'on', n > 0 && n === dispo.length); classe(os[j], 'partiel', n > 0 && n < dispo.length);
       } else classe(os[j], 'on', !!etat[s]);
     }
     var cb = document.querySelectorAll('#cote-epluche button');
@@ -1699,7 +1722,9 @@
   // ---------- Menu de l'appui long ----------
   var menu = el('menu-appui');
   function ouvrirMenu(x, y, p) {
+    // la sélection telle qu'elle sera au relâcher : en mode « Plusieurs », la structure appuyée s'y ajoute
     var l = selectionnes();
+    if (etat.multi && !etat.selection[p.id]) l.push(p);
     el('menu-nom').textContent = l.length > 1 ? l.length + ' structures' : p.fr + (p.cote ? ' (' + libCote(p.cote) + ')' : '');
     menu.querySelector('[data-m="fiche"]').disabled = l.length > 1 || !(fiches && fiches[p.en]);
     menu.classList.remove('cache');
@@ -1712,6 +1737,7 @@
   function fermerMenu() {
     if (menu.classList.contains('cache')) return false;
     menu.classList.add('cache'); document.body.classList.remove('menu-ouvert');
+    tailleEtiq = null; demanderRendu(); // l'étiquette réapparaît : la remesurer et la replacer
     return true;
   }
   var boutonsMenu = menu.querySelectorAll('button');
@@ -2038,10 +2064,24 @@
     classe(el('curseur-coupe'), 'inactif', !c);
     el('coupe-texte').textContent = c ? 'Plan ' + c.plan + ' : ' + RETIRE[c.plan][c.inverse ? 1 : 0] + '.' : 'Choisissez un plan de coupe.';
   }
+  // Position de départ du plan : par le centre de la vue. Pour la coupe sagittale, la ligne médiane du tronc, de la tête
+  // ou du corps vu de loin ; dans un membre, si la vue est centrée entre les deux, l'axe des os du membre droit
+  // (sinon le plan médian retirerait un membre entier au lieu d'en trancher un).
+  function centreCoupe(plan, ax) {
+    if (plan !== 'sagittal') return controls.target[ax];
+    var loin = camera.position.distanceTo(controls.target) > 150;
+    if (etat.region === 'tronc' || etat.region === 'tete-cou' || ((etat.region === 'corps' || etat.region === 'squelette') && loin)) return 0;
+    var x = controls.target.x;
+    if (Math.abs(x) < 4 && M) {
+      var somme = 0, n = 0;
+      M.pieces.forEach(function (p) { if (p.couche === 'os' && p.cote === 'D') { somme += p.c[0]; n++; } });
+      if (n) x = somme / n;
+    }
+    return x;
+  }
   function poserCoupe(plan) {
     var ax = PLANS[plan][3], f = 0.5;
-    // par le centre de la vue ; la coupe sagittale part de la ligne médiane (corps symétrique, et le cadrage peut décaler la vue)
-    if (boite) f = ((plan === 'sagittal' ? 0 : controls.target[ax]) - boite.min[ax]) / Math.max(1, boite.max[ax] - boite.min[ax]);
+    if (boite) f = (centreCoupe(plan, ax) - boite.min[ax]) / Math.max(1, boite.max[ax] - boite.min[ax]);
     etat.coupe = { plan: plan, f: Math.max(0.02, Math.min(0.98, f)), inverse: etat.coupe && etat.coupe.plan === plan ? etat.coupe.inverse : false };
     appliquerCoupe();
   }
@@ -2093,6 +2133,12 @@
   // Sonde de lecture pour les tests automatiques (aucun effet sur l'usage normal)
   var sonde = window.__anatomie = {
     pret: false, journal: [], version: VERSION, etat: etat,
+    couleur: function (x, y) { // couleur RVB du pixel (x, y) du dessin 3D
+      renderer.render(scene, camera);
+      var b = new Uint8Array(4), g = renderer.getContext();
+      g.readPixels(Math.round(x * pr), Math.round((window.innerHeight - y) * pr), 1, 1, g.RGBA, g.UNSIGNED_BYTE, b);
+      return [b[0], b[1], b[2]];
+    },
     planCoupe: function () { return etat.coupe ? UNI.coupe.value.toArray() : null; },
     regionGardee: function (d) { return gardes[d] || ''; },
     boiteRegion: function () { return boiteRegion(); }, camera: camera, controls: controls, renderer: renderer, scene: scene,
