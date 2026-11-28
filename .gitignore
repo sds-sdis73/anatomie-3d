@@ -8,3 +8,4 @@ outils/muscles-za.txt
 .DS_Store
 tests/node_modules/
 tests/resultats/
+.claude/
