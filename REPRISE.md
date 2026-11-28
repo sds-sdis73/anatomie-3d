@@ -69,3 +69,6 @@ Non reproductible : la réalité augmentée (pas d'ARKit ni de WebXR dans Safari
 - Modèles : Z-Anatomy, d'après BodyParts3D (DBCLS) — CC BY-SA 4.0. Les fichiers de `docs/donnees/` en sont dérivés et restent sous CC BY-SA 4.0.
 - Fiches : Z-Anatomy d'après Wikipédia — CC BY-SA.
 - three.js : MIT (`docs/vendor/three-LICENSE.txt`).
+
+## Refonte en cours
+Voir `REFONTE.md` (cahier des charges 1.3) et `conception/maquette.html`. Tests : `tests/` (`node lancer.mjs`), verrou `.githooks/pre-push`, publication par `./deployer.sh` uniquement.

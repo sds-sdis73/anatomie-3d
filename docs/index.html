@@ -6,40 +6,119 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Anatomie 3D">
-<meta name="theme-color" content="#14181d">
+<meta name="theme-color" content="#15181c">
 <link rel="apple-touch-icon" href="icone-180.png">
 <link rel="icon" href="icone-180.png">
 <title>Anatomie 3D</title>
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
-<body>
+<body class="sur-accueil">
 <canvas id="scene"></canvas>
 <canvas id="calque"></canvas>
 
-<!-- Chargement -->
-<div id="chargement">
-  <div class="boite-chargement">
-    <div class="titre-app">Anatomie 3D</div>
-    <div class="barre"><div id="barre-prog"></div></div>
-    <div id="texte-prog">Préparation…</div>
+<!-- Trait de l'étiquette accrochée -->
+<svg id="fil" class="cache" aria-hidden="true"><polyline id="fil-trait" points="0,0 0,0"></polyline><circle id="fil-point" cx="0" cy="0" r="4"></circle></svg>
+
+<!-- Barre du haut -->
+<header id="barre-haut" class="verre">
+  <button id="b-accueil" class="retour">‹ Accueil</button>
+  <div id="titre"><span id="titre-region">Corps entier</span> <small id="titre-sous">· appareil locomoteur</small></div>
+  <div class="icos">
+    <button class="ico" data-panneau="p-recherche" title="Rechercher" aria-label="Rechercher"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 L21 21"/></svg></button>
+    <button class="ico" data-panneau="p-vues" title="Vues enregistrées" aria-label="Vues enregistrées"><svg viewBox="0 0 24 24"><path d="M12 3.2 L14.6 8.9 L20.8 9.5 L16.1 13.6 L17.5 19.8 L12 16.6 L6.5 19.8 L7.9 13.6 L3.2 9.5 L9.4 8.9 Z"/></svg></button>
+    <button class="ico" data-panneau="p-reglages" title="Réglages" aria-label="Réglages"><svg viewBox="0 0 24 24"><path d="M4 7 H20 M4 17 H20"/><circle cx="9" cy="7" r="2.4" class="plein"/><circle cx="15" cy="17" r="2.4" class="plein"/></svg></button>
+  </div>
+</header>
+
+<!-- Règle des couches et systèmes -->
+<aside id="couches" class="verre">
+  <h4>Couches</h4>
+  <div id="regle">
+    <div class="piste"><div id="regle-plein"></div><div id="regle-curseur"></div></div>
+    <div class="rangs">
+      <div class="rang" data-i="0"><span class="nom">Peau</span><button class="oeil" data-c="peau" aria-label="Montrer ou cacher la peau"></button></div>
+      <div class="rang" data-i="1"><span class="nom">Fascias</span><button class="oeil" data-c="fascias" aria-label="Montrer ou cacher les fascias"></button></div>
+      <div class="rang" data-i="2"><span class="nom">Muscles superficiels</span><button class="oeil" data-c="ms" aria-label="Montrer ou cacher les muscles superficiels"></button></div>
+      <div class="rang" data-i="3"><span class="nom">Muscles moyens</span><button class="oeil" data-c="mm" aria-label="Montrer ou cacher les muscles moyens"></button></div>
+      <div class="rang" data-i="4"><span class="nom">Muscles profonds</span><button class="oeil" data-c="mp" aria-label="Montrer ou cacher les muscles profonds"></button></div>
+      <div class="rang" data-i="5"><span class="nom">Ligaments</span><button class="oeil" data-c="ligaments" aria-label="Montrer ou cacher les ligaments"></button></div>
+      <div class="rang" data-i="6"><span class="nom">Os</span><button class="oeil" data-c="os" aria-label="Montrer ou cacher les os"></button></div>
+    </div>
+  </div>
+  <div class="sep"></div>
+  <div id="systemes">
+    <div class="rang-sys"><span class="nom">Nerfs</span><button class="oeil" data-s="nerfs" aria-label="Nerfs"></button></div>
+    <div class="rang-sys"><span class="nom">Cœur et vaisseaux</span><button class="oeil" data-s="cardio" aria-label="Cœur et vaisseaux"></button></div>
+    <div class="rang-sys"><button class="nom deplier" id="b-organes">Organes <span id="organes-fleche">›</span></button><button class="oeil" data-s="organes" aria-label="Organes"></button></div>
+    <div id="organes" class="cache">
+      <div class="rang-sys sous"><span class="nom">Respiratoire</span><button class="oeil" data-s="respiratoire" aria-label="Appareil respiratoire"></button></div>
+      <div class="rang-sys sous"><span class="nom">Digestif</span><button class="oeil" data-s="digestif" aria-label="Appareil digestif"></button></div>
+      <div class="rang-sys sous"><span class="nom">Urinaire</span><button class="oeil" data-s="urinaire" aria-label="Appareil urinaire"></button></div>
+      <div class="rang-sys sous"><span class="nom">Génital (masculin)</span><button class="oeil" data-s="genital" aria-label="Appareil génital"></button></div>
+      <div class="rang-sys sous"><span class="nom">Glandes endocrines</span><button class="oeil" data-s="endocrinien" aria-label="Glandes endocrines"></button></div>
+    </div>
+    <div class="rang-sys"><span class="nom">Lymphatique</span><button class="oeil" data-s="lymphatique" aria-label="Système lymphatique"></button></div>
+    <div class="rang-sys"><span class="nom">Encéphale</span><button class="oeil" data-s="encephale" aria-label="Encéphale"></button></div>
+    <div class="rang-sys"><span class="nom">Œil et oreille</span><button class="oeil" data-s="sens" aria-label="Œil et oreille"></button></div>
+  </div>
+  <div class="cote" id="cote-epluche"><button data-cote="D">Droit</button><button data-cote="" class="actif">Les deux</button><button data-cote="G">Gauche</button></div>
+</aside>
+
+<!-- Barre d'outils -->
+<div id="zone-outils">
+  <nav id="barre-outils" class="verre">
+    <button class="outil actif" id="o-nommer"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" class="plein"/><circle cx="12" cy="12" r="8"/></svg>Nommer</button>
+    <button class="outil" id="b-multi"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="11" height="11" rx="2"/><rect x="9.5" y="9.5" width="11" height="11" rx="2"/></svg>Plusieurs</button>
+    <button class="outil" id="o-transp"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4 A8 8 0 0 1 12 20 Z" class="plein"/></svg>Transparent</button>
+    <button class="outil" id="o-isoler"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.4" class="plein"/></svg>Isoler</button>
+    <button class="outil" id="o-masquer"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M6.4 17.6 L17.6 6.4"/></svg>Masquer</button>
+    <button class="outil" id="o-toutvoir"><svg viewBox="0 0 24 24"><path d="M19.5 12 A7.5 7.5 0 1 1 16.8 6.2"/><path d="M17.5 2.8 L17 6.6 L13.2 6.2"/></svg>Tout voir</button>
+    <button class="outil" id="b-dessin"><svg viewBox="0 0 24 24"><path d="M4 20 L5 15.5 L15.8 4.7 L19.3 8.2 L8.5 19 Z"/><path d="M13.6 6.9 L17.1 10.4"/></svg>Dessiner</button>
+    <button class="outil" id="b-coupe"><svg viewBox="0 0 24 24"><path d="M3 15 L12 9 L21 15 L12 21 Z" opacity=".5"/><path d="M12 2.5 V21.5"/></svg>Coupe</button>
+  </nav>
+</div>
+
+<!-- Réglage de la coupe -->
+<div id="p-coupe" class="verre cache">
+  <div class="coupe-plans">
+    <button data-plan="sagittal">Sagittal</button><button data-plan="frontal">Frontal</button><button data-plan="transversal">Transversal</button>
+  </div>
+  <div id="curseur-coupe"><div class="piste-coupe"><div id="coupe-pouce"></div></div></div>
+  <div class="coupe-bas">
+    <span id="coupe-texte">Choisissez un plan de coupe.</span>
+    <button id="b-coupe-inverser">Inverser</button><button id="b-coupe-off">Sans coupe</button>
   </div>
 </div>
 
-<!-- Barre d'outils gauche -->
-<nav id="outils">
-  <button class="outil" data-panneau="p-vues" title="Vues"><span class="ico">◎</span><span>Vues</span></button>
-  <button class="outil" data-panneau="p-couches" title="Couches"><span class="ico">≋</span><span>Couches</span></button>
-  <button class="outil" id="b-dessin" title="Dessiner"><span class="ico">✎</span><span>Dessin</span></button>
-  <button class="outil" data-panneau="p-recherche" title="Rechercher"><span class="ico">⌕</span><span>Chercher</span></button>
-  <button class="outil" id="b-multi" title="Sélectionner plusieurs structures"><span class="ico">⧉</span><span>Plusieurs</span></button>
-  <button class="outil" id="b-quiz" title="Quiz"><span class="ico">?</span><span>Quiz</span></button>
-  <div class="espace"></div>
-  <button class="outil" id="b-reinit" title="Tout réinitialiser"><span class="ico">↺</span><span>Accueil</span></button>
-  <button class="outil petit" data-panneau="p-infos" title="À propos"><span class="ico">i</span></button>
-</nav>
+<!-- Étiquette accrochée à la structure touchée -->
+<div id="etiquette" class="verre cache">
+  <button class="fermer" id="b-desel" title="Fermer" aria-label="Fermer">×</button>
+  <div id="etiq-type"></div>
+  <div id="etiq-nom"></div>
+  <div id="etiq-nom2"></div>
+  <div class="etiq-actions">
+    <button id="b-fiche">Fiche</button><button id="b-isoler">Isoler</button><button id="b-masquer">Masquer</button><button id="b-insertions">Insertions</button>
+  </div>
+</div>
+
+<!-- Petit menu de l'appui long -->
+<div id="menu-appui" class="verre cache">
+  <div id="menu-nom"></div>
+  <button data-m="masquer">Masquer</button>
+  <button data-m="isoler">Isoler</button>
+  <button data-m="transparent">Rendre transparent</button>
+  <button data-m="fiche">Voir la fiche</button>
+</div>
+
+<!-- Panneau Recherche -->
+<section class="panneau verre" id="p-recherche">
+  <h2>Chercher une structure</h2>
+  <input type="search" id="champ-recherche" placeholder="ex. psoas, L5, sciatique, ménisque…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+  <div id="resultats"></div>
+</section>
 
 <!-- Panneau Vues -->
-<section class="panneau" id="p-vues">
+<section class="panneau verre" id="p-vues">
   <h2>Vues</h2>
   <div class="grille" id="vues-corps"></div>
   <h3>Régions</h3>
@@ -49,37 +128,18 @@
   <button class="large" id="b-memoriser">＋ Mémoriser la vue actuelle</button>
 </section>
 
-<!-- Panneau Couches -->
-<section class="panneau" id="p-couches">
-  <h2>Couches</h2>
-  <div class="choix-cote" id="cote-epluche">
-    <span class="lib">Éplucher :</span>
-    <button data-cote="" class="actif">Les deux côtés</button><button data-cote="D">Côté droit</button><button data-cote="G">Côté gauche</button>
-  </div>
-  <h3>Appareil locomoteur</h3>
-  <label class="bascule"><input type="checkbox" id="t-os"><span></span>Squelette</label>
-  <label class="bascule"><input type="checkbox" id="t-ligaments"><span></span>Ligaments, disques, ménisques</label>
-  <label class="bascule"><input type="checkbox" id="t-capsules"><span></span>Capsules articulaires</label>
-  <label class="bascule"><input type="checkbox" id="t-fascias"><span></span>Fascias et aponévroses</label>
-  <label class="bascule"><input type="checkbox" id="t-peau-transp"><span></span>Peau transparente</label>
-  <h3>Systèmes</h3>
-  <label class="bascule"><input type="checkbox" id="t-nerfs"><span></span>Nerfs et moelle spinale</label>
-  <label class="bascule"><input type="checkbox" id="t-encephale"><span></span>Encéphale</label>
-  <label class="bascule"><input type="checkbox" id="t-sens"><span></span>Œil et oreille</label>
-  <label class="bascule"><input type="checkbox" id="t-cardio"><span></span>Cœur et vaisseaux</label>
-  <label class="bascule"><input type="checkbox" id="t-respiratoire"><span></span>Appareil respiratoire</label>
-  <label class="bascule"><input type="checkbox" id="t-digestif"><span></span>Appareil digestif</label>
-  <label class="bascule"><input type="checkbox" id="t-urinaire"><span></span>Appareil urinaire</label>
-  <label class="bascule"><input type="checkbox" id="t-genital"><span></span>Appareil génital (masculin)</label>
-  <label class="bascule"><input type="checkbox" id="t-endocrinien"><span></span>Glandes endocrines</label>
-  <label class="bascule"><input type="checkbox" id="t-lymphatique"><span></span>Système lymphatique</label>
-  <h3>Affichage</h3>
+<!-- Panneau Réglages -->
+<section class="panneau verre" id="p-reglages">
+  <h2>Réglages</h2>
   <div class="choix-cote" id="choix-langue">
     <span class="lib">Nom secondaire :</span>
     <button data-l="" class="actif">Aucun</button><button data-l="la">Latin</button><button data-l="en">Anglais</button>
   </div>
   <label class="bascule" style="margin-top:8px"><input type="checkbox" id="t-endoscope"><span></span>Lumière d’endoscope</label>
   <label class="bascule"><input type="checkbox" id="t-fibres"><span></span>Fibres musculaires détaillées</label>
+  <label class="bascule"><input type="checkbox" id="t-peau-transp"><span></span>Peau transparente</label>
+  <label class="bascule"><input type="checkbox" id="t-capsules"><span></span>Capsules articulaires</label>
+  <button class="large" id="b-quiz">Lancer le quiz</button>
   <h3>Légende</h3>
   <div class="legende">
     <span><i style="background:#ecdfc8"></i>Os</span><span><i style="background:#9fc3da"></i>Cartilage</span>
@@ -88,27 +148,16 @@
     <span><i style="background:#d9dbea"></i>Fascia</span><span><i style="background:#c62828"></i>Artère</span>
     <span><i style="background:#3554a5"></i>Veine</span><span><i style="background:#86b85a"></i>Lymphatique</span>
   </div>
-</section>
-
-<!-- Panneau Recherche -->
-<section class="panneau" id="p-recherche">
-  <h2>Chercher une structure</h2>
-  <input type="search" id="champ-recherche" placeholder="ex. psoas, L5, sciatique, ménisque…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-  <div id="resultats"></div>
-</section>
-
-<!-- Panneau Infos -->
-<section class="panneau" id="p-infos">
-  <h2>À propos</h2>
-  <p>Atlas d'anatomie 3D pour expliquer au patient. Fonctionne sans connexion une fois chargé (les systèmes viscéraux, vasculaire et nerveux central sont téléchargés la première fois qu’on les affiche).</p>
   <h3>Gestes</h3>
   <ul>
     <li>Un doigt : tourner autour du corps</li>
-    <li>Deux doigts : pincer pour zoomer, glisser pour déplacer</li>
-    <li>Toucher brièvement : nommer une structure</li>
-    <li>« Plusieurs » : toucher plusieurs structures pour les isoler, masquer ou rendre transparentes ensemble</li>
+    <li>Deux doigts : glisser pour déplacer, pincer pour zoomer vers les doigts</li>
+    <li>Toucher : nommer une structure ; toucher deux fois : centrer et rapprocher</li>
+    <li>Appui long sur une structure : masquer, isoler, rendre transparent, voir la fiche</li>
+    <li>Règle des couches : glisser le doigt pour enlever ou remettre les couches ; l’œil montre ou cache une couche ; appui long : n’afficher qu’elle (un second appui long rétablit tout)</li>
   </ul>
-  <h3>Sources et licences</h3>
+  <h3>À propos</h3>
+  <p>Atlas d'anatomie 3D pour expliquer au patient. Fonctionne sans connexion une fois chargé (les systèmes viscéraux, vasculaire et nerveux central sont téléchargés la première fois qu’on les affiche).</p>
   <p class="petit">Modèles 3D : <b>Z-Anatomy</b> (Gauthier Kervyn, Lluís Vinent), d'après <b>BodyParts3D</b> © The Database Center for Life Science — licence CC BY-SA 4.0. Les modèles ont été allégés pour cet appareil.</p>
   <p class="petit">Fiches descriptives : Z-Anatomy, d'après Wikipédia — CC BY-SA.</p>
   <p class="petit">Moteur 3D : three.js (licence MIT).</p>
@@ -117,48 +166,18 @@
   <p class="petit" id="fluidite">Faites tourner le corps pour mesurer la fluidité.</p>
 </section>
 
-<!-- Curseur d'épluchage -->
-<div id="epluchage">
-  <div class="crans" id="crans">
-    <button data-n="4">Peau</button>
-    <button data-n="3">Muscles<br>superficiels</button>
-    <button data-n="2">Muscles<br>moyens</button>
-    <button data-n="1">Muscles<br>profonds</button>
-    <button data-n="0">Squelette</button>
-  </div>
-</div>
-
-<!-- Carte de sélection -->
-<div id="carte" class="cache">
-  <div class="carte-tete">
-    <div>
-      <div id="carte-type"></div>
-      <div id="carte-nom"></div>
-      <div id="carte-nom2"></div>
-    </div>
-    <button class="fermer" id="b-desel" title="Fermer">×</button>
-  </div>
-  <div class="carte-actions">
-    <button id="b-isoler">Isoler</button>
-    <button id="b-masquer">Masquer</button>
-    <button id="b-transp">Transparent</button>
-    <button id="b-insertions">Insertions</button>
-    <button id="b-fiche">Fiche</button>
-  </div>
-</div>
-
 <!-- Bandeau d'état (isolement, masqués) -->
-<div id="etat" class="cache">
+<div id="etat" class="verre cache">
   <span id="etat-texte"></span>
   <button id="b-etat">Tout réafficher</button>
 </div>
 
 <!-- Barre de dessin -->
-<div id="barre-dessin" class="cache">
-  <button class="couleur actif" data-c="#e03131" style="background:#e03131"></button>
-  <button class="couleur" data-c="#1c7ed6" style="background:#1c7ed6"></button>
-  <button class="couleur" data-c="#fab005" style="background:#fab005"></button>
-  <button class="couleur" data-c="#2f9e44" style="background:#2f9e44"></button>
+<div id="barre-dessin" class="verre cache">
+  <button class="couleur actif" data-c="#e03131" style="background:#e03131" aria-label="Rouge"></button>
+  <button class="couleur" data-c="#1c7ed6" style="background:#1c7ed6" aria-label="Bleu"></button>
+  <button class="couleur" data-c="#fab005" style="background:#fab005" aria-label="Jaune"></button>
+  <button class="couleur" data-c="#2f9e44" style="background:#2f9e44" aria-label="Vert"></button>
   <span class="sep"></span>
   <button id="b-mode-trait" class="mode actif">Sur le corps</button>
   <button id="b-mode-ecran" class="mode">Sur l'écran</button>
@@ -169,7 +188,7 @@
 </div>
 
 <!-- Quiz -->
-<div id="barre-quiz" class="cache">
+<div id="barre-quiz" class="verre cache">
   <div class="quiz-haut">
     <div class="quiz-modes"><button data-q="ou" class="actif">Où est… ?</button><button data-q="quoi">Qu’est-ce que c’est ?</button></div>
     <span id="quiz-score">0 / 0</span>
@@ -181,21 +200,50 @@
 </div>
 
 <!-- Fiche descriptive -->
-<div id="fiche" class="cache">
-  <div class="fiche-tete"><h2 id="fiche-titre"></h2><button class="fermer" id="b-fiche-fermer">×</button></div>
+<div id="fiche" class="verre cache">
+  <div class="fiche-tete"><h2 id="fiche-titre"></h2><button class="fermer" id="b-fiche-fermer" aria-label="Fermer">×</button></div>
   <div id="fiche-corps"></div>
 </div>
 
 <!-- Légende insertions -->
-<div id="legende-ins" class="cache">
+<div id="legende-ins" class="verre cache">
   <span><i style="background:#e8590c"></i>Origine</span>
   <span><i style="background:#12b886"></i>Terminaison</span>
+</div>
+
+<!-- Écran d'accueil -->
+<div id="accueil">
+  <div class="accueil-tete">
+    <div class="h">Anatomie 3D</div>
+    <div class="sous">Choisissez une région du corps ou un système</div>
+  </div>
+  <div class="vignettes">
+    <button class="vignette" data-region="corps" style="background-image:url('img/v-corps.jpg')"><span>Corps entier<small>vue d’ensemble</small></span></button>
+    <button class="vignette" data-region="tete-cou" style="background-image:url('img/v-tete.jpg')"><span>Tête et cou<small>ATM, cervicales, face</small></span></button>
+    <button class="vignette" data-region="tronc" style="background-image:url('img/v-tronc.jpg')"><span>Tronc<small>thorax, rachis, bassin</small></span></button>
+    <button class="vignette" data-region="membre-superieur" style="background-image:url('img/v-bras.jpg')"><span>Membre supérieur<small>épaule, coude, main</small></span></button>
+    <button class="vignette" data-region="membre-inferieur" style="background-image:url('img/v-jambe.jpg')"><span>Membre inférieur<small>hanche, genou, pied</small></span></button>
+    <button class="vignette" data-region="squelette" style="background-image:url('img/v-squelette.jpg')"><span>Squelette<small>os et articulations</small></span></button>
+  </div>
+  <div class="puces-sys" id="puces-sys">
+    <button data-sys="muscles">Muscles</button><button data-sys="nerfs">Nerfs</button><button data-sys="cardio">Cœur et vaisseaux</button><button data-sys="respiratoire">Respiratoire</button><button data-sys="digestif">Digestif</button><button data-sys="urinaire">Urinaire</button><button data-sys="endocrinien">Endocrinien</button><button data-sys="lymphatique">Lymphatique</button><button data-sys="sens">Œil et oreille</button><button data-action="vues" class="marque">☆ Mes vues</button><button data-action="quiz" class="marque">Quiz</button>
+  </div>
+  <div id="accueil-prog"><div class="barre"><div id="accueil-barre"></div></div><span id="accueil-texte">Préparation du modèle…</span></div>
+</div>
+
+<!-- Chargement (changement de région, ou modèle pas encore prêt) -->
+<div id="chargement" class="cache">
+  <div class="boite-chargement">
+    <div class="titre-app" id="chargement-titre">Anatomie 3D</div>
+    <div class="barre"><div id="barre-prog"></div></div>
+    <div id="texte-prog">Préparation…</div>
+  </div>
 </div>
 
 <div id="bulle" class="cache"></div>
 
 <script src="vendor/three.min.js"></script>
 <script src="vendor/OrbitControls.js"></script>
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>
