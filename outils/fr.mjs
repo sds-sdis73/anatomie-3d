@@ -1,6 +1,7 @@
 // Noms français des structures (nomenclature anatomique française usuelle).
 import fs from 'fs';
 import { ta2 } from './ta2.mjs';
+import { ZA } from './sources.mjs';
 
 const ORD = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7, eighth: 8, ninth: 9, tenth: 10, eleventh: 11, twelfth: 12 };
 const ordFr = n => (n === 1 ? '1re' : n + 'e');
@@ -255,7 +256,7 @@ function regles(b) {
 }
 
 // Fiches Z-Anatomy (CC BY-SA, issues de Wikipédia)
-const DDEF = '../sources-za/repo/Resources/Descriptions/French definitions/';
+const DDEF = ZA + 'repo/Resources/Descriptions/French definitions/';
 const norm = s => s.toLowerCase().replace(/-fr\.txt$/, '').replace(/[()]/g, '').replace(/_/g, ' ').replace(/ muscles?$/, '').replace(/^muscle /, '').trim();
 const fiches = new Map();
 for (const fn of fs.readdirSync(DDEF)) fiches.set(norm(fn), fn);

@@ -7,6 +7,17 @@ var FICHIERS = [
 ].concat(['os', 'muscles', 'articulations', 'nerfs', 'peau', 'insertions', 'cardio', 'visceres', 'lymphatique', 'encephale', 'sens', 'ao-os', 'ao-muscles', 'fibres-s'].map(function (n) {
   return 'donnees/' + n + '.bin?v=1.3.0';
 }));
+// Régions détaillées (docs/donnees/<region>/) : seulement les paquets présents dans chaque région
+var REGIONS = {
+  'tete-cou': ['os', 'muscles', 'articulations', 'nerfs', 'peau', 'insertions', 'cardio', 'visceres', 'lymphatique', 'encephale', 'sens'],
+  'tronc': ['os', 'muscles', 'articulations', 'nerfs', 'peau', 'insertions', 'cardio', 'visceres', 'lymphatique'],
+  'membre-superieur': ['os', 'muscles', 'articulations', 'nerfs', 'peau', 'insertions', 'cardio', 'lymphatique'],
+  'membre-inferieur': ['os', 'muscles', 'articulations', 'nerfs', 'peau', 'insertions', 'cardio', 'lymphatique']
+};
+Object.keys(REGIONS).forEach(function (r) {
+  FICHIERS.push('donnees/' + r + '/manifeste.json?v=1.2.1', 'donnees/' + r + '/fiches.json?v=1.2.1');
+  REGIONS[r].concat(['ao-os', 'ao-muscles', 'fibres-s']).forEach(function (n) { FICHIERS.push('donnees/' + r + '/' + n + '.bin?v=1.2.1'); });
+});
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(FICHIERS); }).then(function () { return self.skipWaiting(); }));

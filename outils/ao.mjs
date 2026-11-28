@@ -1,12 +1,23 @@
 // Prototype de rendu réaliste : ombres de contact (occlusion ambiante) par sommet + axe des fibres musculaires.
-// Lit docs/donnees (manifeste + paquets) et y écrit : ao-os.bin, ao-muscles.bin, fibres-s.bin.
+// Lit un dossier de données (manifeste + paquets) et y écrit : ao-os.bin, ao-muscles.bin, fibres-s.bin.
+// Usage : node ao.mjs [dossier…] | node ao.mjs --regions   (par défaut : ../docs/donnees/, le corps entier)
 // À lancer APRÈS construire.mjs (les fichiers suivent l'ordre des pièces du manifeste).
 import fs from 'fs';
 import * as THREE from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 
-const D = '../docs/donnees/', OUT = D;
-fs.mkdirSync(OUT, { recursive: true });
+import { norm, cles } from './fibres-cles.mjs';
+
+// Dossiers à traiter : ceux donnés en argument, « --regions » pour les quatre régions, sinon le corps entier.
+const REGIONS = ['tete-cou', 'tronc', 'membre-superieur', 'membre-inferieur'];
+const args = process.argv.slice(2);
+let dossiers = args.filter(a => a !== '--regions');
+if (args.indexOf('--regions') >= 0) dossiers = dossiers.concat(REGIONS.map(r => '../docs/donnees/' + r));
+if (!dossiers.length) dossiers = ['../docs/donnees/'];
+for (const d of dossiers) { console.log('■', d); traiter(d.replace(/\/?$/, '/')); }
+
+function traiter(D) {
+const OUT = D;
 const M = JSON.parse(fs.readFileSync(D + 'manifeste.json', 'utf8'));
 const bufs = {};
 const lire = n => (bufs[n] = bufs[n] || fs.readFileSync(D + n + '.bin'));
@@ -78,7 +89,6 @@ fs.writeFileSync(OUT + 'ao-muscles.bin', Buffer.concat(mus.map(p => Buffer.from(
 
 // axe des fibres : de l'origine vers la terminaison si connues, sinon axe principal (ACP)
 const ins = M.pieces.filter(p => p.couche === 'insertions');
-const norm = s => s.toLowerCase().replace(/[()]/g, '').replace(/_muscles?r?$/, '').replace(/_muscles?_/g, '_');
 const fibres = {};
 for (const p of mus) {
   const g = geo.get(p.id); const c = new THREE.Vector3(p.c[0], p.c[1], p.c[2]);
@@ -103,18 +113,6 @@ console.log('fibres', Object.keys(fibres).length);
 
 // ---------- Champ de direction des fibres, sommet par sommet ----------
 // t = dO / (dO + dE) : 0 sur l'origine, 1 sur la terminaison. Les fibres suivent la pente de t le long de la surface.
-const GROUPES = [
-  [/gastrocnemius|^soleus|calcaneal_tendon/, ['triceps_surae']], [/rectus_femoris|^vastus_/, ['quadriceps_femoris', 'patellar_ligament']],
-  [/^psoas_major|^iliacus/, ['iliopsoas']], [/^iliocostalis|^longissimus|^spinalis/, ['erector_spinae']],
-  [/pubo-analis|pubococcygeus|iliococcygeus/, ['levator_ani']], [/flexor_carpi|palmaris_longus|pronator_teres|flexor_digitorum_superficialis/, ['common_flexor_tendon']],
-  [/extensor_carpi_radialis_brevis|^extensor_digitorum$|extensor_digiti_minimi|extensor_carpi_ulnaris/, ['common_extensor_tendon']],
-];
-function cles(en) {
-  const k = norm(en), c = new Set([k]);
-  const m = k.match(/^(?:.*?_)?(?:head|part|belly)_of_(.+)$/); if (m) c.add(m[1]);
-  GROUPES.forEach(([re, l]) => { if (re.test(k)) l.forEach(x => c.add(x)); });
-  return c;
-}
 const insGeo = new Map();
 function ptsInsertion(q) {
   if (!insGeo.has(q.id)) insGeo.set(q.id, decoder(q).P);
@@ -238,3 +236,4 @@ for (const p of mus) {
 }
 fs.writeFileSync(OUT + 'fibres-s.bin', Buffer.concat(sortiesS));
 console.log('coordonnée des fibres :', nEventail, 'muscles en éventail sur', mus.length);
+}

@@ -103,18 +103,25 @@
 
   var PAL_N = { 0: [214, 209, 199], 1: [196, 210, 220], 2: [236, 232, 222], 3: [198, 100, 84], 4: [228, 226, 221], 5: [210, 212, 208] };
   var PAL_A = { 0: [236, 223, 200], 1: [159, 195, 218], 2: [245, 241, 230], 3: [184, 71, 59], 4: [234, 226, 207], 5: [195, 205, 203] };
+  [PAL_N, PAL_A].forEach(function (P) { P[6] = [205, 207, 200]; P[7] = [232, 205, 96]; P[8] = [226, 188, 164]; P[9] = [215, 215, 225]; P[11] = [240, 220, 150]; P[14] = [240, 235, 225]; P[15] = [196, 52, 48]; P[16] = [70, 92, 178]; P[17] = [170, 58, 58]; });
 
   function charger(u, t) { return fetch(u).then(function (r) { return t === 'json' ? r.json() : r.arrayBuffer(); }); }
-  Promise.all([charger('../docs/donnees/manifeste.json', 'json'), charger('../docs/donnees/os.bin'), charger('../docs/donnees/muscles.bin'),
-    charger('../docs/donnees/ao-os.bin'), charger('../docs/donnees/ao-muscles.bin'), Promise.resolve({}), Promise.resolve(new ArrayBuffer(0)), charger('../docs/donnees/fibres-s.bin')]).then(function (r) {
-    var M = r[0], bufs = { os: r[1], muscles: r[2] }, aos = { os: new Uint8Array(r[3]), muscles: new Uint8Array(r[4]) }, fibres = r[5], champ = new Int8Array(r[6]), coordS = new Float32Array(r[7]), offF = 0;
+  // dossier de données : ?donnees=../docs/donnees/tronc/ (par défaut le corps entier)
+  var D = (q.donnees || '../docs/donnees/').replace(/\/?$/, '/');
+  // paquets affichés en plus des os et muscles (contrôle des découpes) : ?extra=peau,nerfs,cardio
+  var extra = q.extra ? q.extra.split(',') : [];
+  Promise.all([charger(D + 'manifeste.json', 'json'), charger(D + 'os.bin'), charger(D + 'muscles.bin'),
+    charger(D + 'ao-os.bin'), charger(D + 'ao-muscles.bin'), Promise.resolve({}), Promise.resolve(new ArrayBuffer(0)), charger(D + 'fibres-s.bin')].concat(extra.map(function (n) { return charger(D + n + '.bin'); }))).then(function (r) {
+    var M = r[0], bufs = { os: r[1], muscles: r[2] };
+    extra.forEach(function (n, i) { bufs[n] = r[8 + i]; });
+    var aos = { os: new Uint8Array(r[3]), muscles: new Uint8Array(r[4]) }, fibres = r[5], champ = new Int8Array(r[6]), coordS = new Float32Array(r[7]), offF = 0;
     var g = new THREE.Group(); g.scale.setScalar(M.echelle); g.position.fromArray(M.centre); scene.add(g);
     var off = { os: 0, muscles: 0 };
     var niveau = q.niveau ? +q.niveau : 3;
     M.pieces.forEach(function (p) {
       var cle = p.couche === 'os' ? 'os' : p.couche === 'muscles' ? 'muscles' : null;
-      if (!cle) return;
-      var aoTab = aos[cle].subarray(off[cle], off[cle] + p.vc); off[cle] += p.vc;
+      if (!cle && extra.indexOf(p.paquet) < 0) return;
+      var aoTab = cle ? aos[cle].subarray(off[cle], off[cle] + p.vc) : new Uint8Array(p.vc).fill(255); if (cle) off[cle] += p.vc;
       var champP = null, sP = null; if (cle === 'muscles') { champP = champ.subarray(offF * 3, (offF + p.vc) * 3); sP = coordS.subarray(offF, offF + p.vc); offF += p.vc; }
       if (p.couche === 'muscles' && !(p.prof <= niveau) && (!q.cote || p.cote === q.cote)) return;
       var b = bufs[p.paquet], o = p.o;

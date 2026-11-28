@@ -1,6 +1,7 @@
 import fs from 'fs';
 import * as THREE from 'three';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+import { pathToFileURL } from 'url';
 globalThis.self = globalThis; 
 export function lireFbx(path){
   const buf = fs.readFileSync(path);
@@ -9,7 +10,8 @@ export function lireFbx(path){
   loader.manager.itemStart = ()=>{}; 
   return loader.parse(ab, '');
 }
-if (process.argv[2]) {
+// lancé directement : node lire-fbx.mjs fichier.fbx (pas quand le module est importé)
+if (process.argv[2] && process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const t0=Date.now(); const root = lireFbx(process.argv[2]);
   root.updateMatrixWorld(true);
   let n=0, tri=0; const ex=[];
