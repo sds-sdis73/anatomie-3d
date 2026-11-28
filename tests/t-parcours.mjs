@@ -1,5 +1,7 @@
 // Parcours complets dans un Chrome au format iPad (tactile), contexte WebGL 1 comme sur l'iPad mini 2.
-import { ouvrirAppli, geste, toucher, attendre, Rapport } from './commun.mjs';
+import fs from 'fs';
+import path from 'path';
+import { ouvrirAppli, geste, toucher, appuiLong, doubleToucher, attendre, Rapport, DOCS } from './commun.mjs';
 import { ui } from './interface.mjs';
 
 const lire = page => page.evaluate(() => {
@@ -151,6 +153,113 @@ export default async function (nav, url) {
   r.ok(/Touchez|orange/.test(q), 'le quiz pose une question', q);
   await ui.finQuiz(page);
 
+  // =================== Nouveautés 1.3 ===================
+  // ---- étiquette accrochée
+  await ui.accueil(page);
+  const vEt = await page.evaluate((x, y) => window.__anatomie.viser(x, y), cx, cy);
+  await toucher(page, cx, cy);
+  const et = await page.evaluate(() => window.__anatomie.etiquette());
+  r.ok(vEt && et.visible && et.nom === vEt.fr, 'l’étiquette accrochée affiche le nom de la structure touchée', JSON.stringify(et));
+  r.ok(et.fil, 'l’étiquette est reliée par un trait au point touché');
+  await ui.action(page, 'fermer');
+  r.ok(!(await page.evaluate(() => window.__anatomie.etiquette().visible)), 'la croix ferme l’étiquette');
+
+  // ---- double toucher : centrer et rapprocher
+  s0 = await lire(page);
+  const vDbl = await page.evaluate((x, y) => window.__anatomie.viser(x, y), cx, cy);
+  await doubleToucher(page, cx, cy);
+  s1 = await lire(page);
+  r.ok(vDbl && dist(s1.cible, vDbl.point) < 1 && dist(s1.cam, s1.cible) < 0.7 * dist(s0.cam, s0.cible),
+    'toucher deux fois centre la vue sur la structure et la rapproche',
+    'cible à ' + (vDbl ? dist(s1.cible, vDbl.point).toFixed(1) : '?') + ' cm du point, distance ' + Math.round(dist(s0.cam, s0.cible)) + ' → ' + Math.round(dist(s1.cam, s1.cible)));
+
+  // ---- appui long sur une structure : petit menu
+  await ui.accueil(page);
+  const vAl = await page.evaluate((x, y) => window.__anatomie.viser(x, y), cx, cy);
+  const camAl = (await lire(page)).cam;
+  const nAl = await page.evaluate(() => window.__anatomie.visibles());
+  await appuiLong(page, cx, cy);
+  r.ok(await ui.menuOuvert(page), 'un appui long sur une structure ouvre le petit menu');
+  r.ok(dist((await lire(page)).cam, camAl) < 0.01, 'l’appui long ne fait pas bouger le corps');
+  await ui.actionMenu(page, 'masquer');
+  const nAl2 = await page.evaluate(() => window.__anatomie.visibles());
+  const masqueAl = await page.evaluate(id => !!window.__anatomie.etat.masques[id], vAl && vAl.id);
+  r.ok(nAl2 === nAl - 1 && masqueAl, 'le menu « Masquer » retire la structure appuyée (' + (vAl && vAl.fr) + ')', nAl + ' → ' + nAl2);
+  await appuiLong(page, cx, cy);
+  await ui.actionMenu(page, 'isoler');
+  r.ok(await page.evaluate(() => window.__anatomie.visibles()) === 1, 'le menu « Isoler » n’affiche plus que la structure appuyée');
+  await ui.toutReafficher(page);
+  r.ok(await page.evaluate(() => !window.__anatomie.etat.isole && !Object.keys(window.__anatomie.etat.masques).length), '« Tout voir » réaffiche tout');
+
+  // ---- règle des couches : un seul geste de glisser
+  await ui.accueil(page);
+  const depart = (await lire(page)).visibles;
+  const [xr, y2] = await ui.rangRegle(page, 2), [, y6] = await ui.rangRegle(page, 6), [, y0] = await ui.rangRegle(page, 0), [, y3] = await ui.rangRegle(page, 3);
+  await geste(page, [[[xr, y2], [xr, y6]]], { pas: 14, delai: 25 });
+  const bas = (await lire(page)).visibles;
+  r.ok(!bas.muscles && bas.os > 100, 'glisser le doigt vers le bas de la règle enlève les couches jusqu’à l’os', JSON.stringify(bas));
+  await geste(page, [[[xr, y6], [xr, y0]]], { pas: 14, delai: 25 });
+  const hautR = (await lire(page)).visibles;
+  r.ok(hautR.peau === 1 && !hautR.muscles, 'glisser vers le haut les remet jusqu’à la peau', JSON.stringify(hautR));
+  await geste(page, [[[xr, y0], [xr, y3]]], { pas: 10, delai: 25 });
+  const milieu = (await lire(page)).visibles;
+  r.ok(await page.evaluate(() => window.__anatomie.etat.regle) === 3 && milieu.muscles > 0 && milieu.muscles < depart.muscles,
+    'arrêter le doigt sur « Muscles moyens » garde les plans moyen et profond', JSON.stringify(milieu));
+
+  // ---- œil d'une couche
+  await ui.accueil(page);
+  await ui.oeil(page, 'ligaments');
+  const lig = (await lire(page)).visibles.ligaments || 0;
+  await ui.oeil(page, 'ligaments');
+  const lig2 = (await lire(page)).visibles.ligaments || 0;
+  r.ok(lig > 50 && !lig2, 'l’œil des ligaments les montre puis les cache', lig + ' puis ' + lig2);
+  await ui.oeil(page, 'ms');
+  const sansSup = (await lire(page)).visibles;
+  r.ok(sansSup.muscles > 0 && sansSup.muscles < depart.muscles, 'l’œil des muscles superficiels les cache seuls', JSON.stringify(sansSup));
+  await ui.oeil(page, 'ms');
+
+  // ---- appui long sur une couche : n'afficher qu'elle, puis tout rétablir
+  await ui.accueil(page);
+  const [xo, yo] = await ui.rangRegle(page, 6);
+  await appuiLong(page, xo, yo);
+  const seule = (await lire(page)).visibles;
+  r.ok(seule.os > 100 && Object.keys(seule).length === 1, 'appui long sur « Os » : seuls les os restent', JSON.stringify(seule));
+  await appuiLong(page, xo, yo);
+  const retab = (await lire(page)).visibles;
+  r.ok(retab.muscles === depart.muscles && retab.os === depart.os, 'un second appui long rétablit toutes les couches', JSON.stringify(retab));
+
+  // ---- côté épluché
+  await ui.niveau(page, 0);
+  await ui.cote(page, 'D');
+  const coteD = await page.evaluate(() => { let d = 0, g = 0; window.__anatomie.scene.traverse(o => { if (o.isMesh && o.visible && o.userData.p && o.userData.p.couche === 'muscles') { if (o.userData.p.cote === 'D') d++; if (o.userData.p.cote === 'G') g++; } }); return [d, g]; });
+  r.ok(coteD[0] === 0 && coteD[1] > 50, '« Droit » : seul le côté droit est épluché, le gauche garde ses muscles', 'muscles droits ' + coteD[0] + ', gauches ' + coteD[1]);
+  await ui.cote(page, '');
+
+  // ---- coupe
+  await ui.accueil(page);
+  const pt = await page.evaluate(() => { // un point de l'écran qui touche le côté gauche du patient (+X)
+    const a = window.__anatomie;
+    for (let y = 250; y < 600; y += 20) for (let x = 540; x < 760; x += 8) { const h = a.viser(x, y); if (h && h.point[0] > 6) return [x, y, h.fr]; }
+    return null;
+  });
+  const nCoupe0 = await page.evaluate(() => window.__anatomie.visibles());
+  const pix0 = pt ? await page.evaluate((x, y) => window.__anatomie.pixel(x, y), pt[0], pt[1]) : 0;
+  await ui.coupe(page, 'sagittal');
+  const apresCoupe = await page.evaluate(p => { const a = window.__anatomie, h = p ? a.viser(p[0], p[1]) : null; return { h, pix: p ? a.pixel(p[0], p[1]) : -1, n: a.visibles(), plan: a.etat.coupe && a.etat.coupe.plan }; }, pt);
+  r.ok(!!pt && pix0 > 0, 'avant la coupe, le côté gauche du patient est dessiné (' + (pt && pt[2]) + ')');
+  r.ok(apresCoupe.plan === 'sagittal' && apresCoupe.pix === 0, 'coupe sagittale : rien n’est dessiné au-delà du plan', 'opacité du pixel : ' + apresCoupe.pix);
+  r.ok(!apresCoupe.h || apresCoupe.h.point[0] <= 0.1, 'coupe sagittale : la partie coupée ne se touche plus', JSON.stringify(apresCoupe.h));
+  r.ok(apresCoupe.n < nCoupe0, 'les structures entièrement coupées ne sont plus dessinées', nCoupe0 + ' → ' + apresCoupe.n);
+  const [gC, dC, yC] = await ui.pisteCoupe(page);
+  const fAvant = await page.evaluate(() => window.__anatomie.etat.coupe.f);
+  await geste(page, [[[gC + (dC - gC) * fAvant, yC], [gC + (dC - gC) * 0.95, yC]]], { pas: 8 });
+  const fApres = await page.evaluate(() => window.__anatomie.etat.coupe.f);
+  r.ok(fApres > 0.9 && (await page.evaluate(() => window.__anatomie.visibles())) > apresCoupe.n, 'le curseur déplace le plan de coupe', fAvant.toFixed(2) + ' → ' + fApres.toFixed(2));
+  await ui.coupe(page, 'transversal');
+  r.ok(await page.evaluate(() => window.__anatomie.etat.coupe.plan) === 'transversal', 'le plan transversal se choisit');
+  await ui.coupe(page, null);
+  r.ok(await page.evaluate(() => !window.__anatomie.etat.coupe) && (await page.evaluate(() => window.__anatomie.visibles())) === nCoupe0, '« Sans coupe » rend tout le corps');
+
   // ---- performance au démarrage (vue d'ensemble)
   await ui.accueil(page);
   const info = (await lire(page)).info;
@@ -159,5 +268,36 @@ export default async function (nav, url) {
 
   r.ok(!erreurs.length, 'aucune erreur dans la console pendant tout le parcours', erreurs.slice(0, 5).join(' | '));
   await page.close();
+
+  // ---- écran d'accueil et régions (page séparée : le dossier « tronc » est volontairement rendu absent)
+  let refusTronc = 0;
+  const { page: pa, erreurs: errA } = await ouvrirAppli(nav, url, { accueil: true, avantChargement: async pg => {
+    await pg.setBypassServiceWorker(true); await pg.setRequestInterception(true);
+    pg.on('request', q => { if (/donnees\/tronc\//.test(q.url())) { refusTronc++; q.respond({ status: 404, body: 'absent' }); } else q.continue(); });
+  } });
+  r.ok(await ui.surAccueil(pa), 'l’application s’ouvre sur l’écran d’accueil');
+  const vign = await pa.evaluate(() => [...document.querySelectorAll('#accueil .vignette')].map(b => b.textContent));
+  r.ok(vign.length === 6 && /Corps entier/.test(vign[0]) && /Squelette/.test(vign[5]), 'l’accueil propose six vignettes (corps entier, quatre régions, squelette)', vign.join(' | '));
+  await ui.region(pa, 'tronc');
+  const tr = await pa.evaluate(() => { const a = window.__anatomie, t = a.controls.target; return { jeu: a.jeu(), titre: document.getElementById('titre-region').textContent, y: t.y, d: a.camera.position.distanceTo(t) }; });
+  r.ok(tr.jeu.dossier === '' && tr.jeu.region === 'tronc', 'sans dossier « donnees/tronc/ », le tronc retombe sur le corps entier', JSON.stringify(tr.jeu));
+  r.ok(tr.titre === 'Tronc' && tr.y > 95 && tr.y < 135 && tr.d < 220, 'la caméra est cadrée sur le tronc', JSON.stringify(tr));
+  // Chrome répète chaque 404 dans la console sans l'adresse : autant de ces lignes que de 404 voulus sur « tronc », et rien d'autre
+  const http404Tronc = refusTronc + errA.filter(e => /^HTTP 404 : .*donnees\/tronc\//.test(e)).length;
+  const console404 = errA.filter(e => /^console : Failed to load resource: .*404/.test(e)).length;
+  const autres = errA.filter(e => !/^HTTP 404 : .*donnees\/tronc\//.test(e) && !/^console : Failed to load resource: .*404/.test(e));
+  r.ok(http404Tronc >= 1 && console404 <= http404Tronc && !autres.length, 'seule l’absence du dossier de région est signalée', autres.slice(0, 3).join(' | ') || (http404Tronc + ' / ' + console404));
+  await ui.region(pa, 'squelette');
+  const sq = (await lire(pa)).visibles;
+  r.ok(!sq.muscles && sq.os > 100 && sq.ligaments > 50, '« Squelette » : os et ligaments, sans muscles', JSON.stringify(sq));
+  await ui.region(pa, 'membre-inferieur');
+  const mi = await pa.evaluate(() => ({ jeu: window.__anatomie.jeu(), y: window.__anatomie.controls.target.y }));
+  const dossierMI = fs.existsSync(path.join(DOCS, 'donnees', 'membre-inferieur', 'manifeste.json'));
+  r.ok(dossierMI ? mi.jeu.dossier === 'membre-inferieur/' : mi.jeu.dossier === '',
+    'membre inférieur : ' + (dossierMI ? 'le jeu détaillé de la région est chargé' : 'repli sur le corps entier (pas encore de jeu détaillé)'), JSON.stringify(mi.jeu));
+  r.ok(mi.y < 70, 'la caméra est cadrée sur les membres inférieurs', 'cible à y = ' + mi.y.toFixed(0));
+  await ui.region(pa, 'corps');
+  r.ok(!(await ui.surAccueil(pa)) && (await lire(pa)).visibles.muscles > 100, 'revenir à l’accueil puis choisir « Corps entier » réaffiche le corps');
+  await pa.close();
   return r;
 }
