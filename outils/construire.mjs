@@ -1,5 +1,8 @@
 // Conversion des modèles Z-Anatomy (FBX) en paquets binaires allégés pour l'iPad.
-// Usage : node construire.mjs
+// Usage : node construire.mjs                       corps entier → docs/donnees/
+//         node construire.mjs --regions             les quatre régions détaillées → docs/donnees/<region>/
+//         node construire.mjs --regions tronc,tete-cou   seulement ces régions
+// Sources : variable SOURCES_ZA (voir sources.mjs). Après chaque construction : node ao.mjs (ou node ao.mjs --regions).
 import fs from 'fs';
 import * as THREE from 'three';
 import { MeshoptSimplifier } from 'meshoptimizer';
@@ -9,11 +12,17 @@ import { nomFr, fiche } from './fr.mjs';
 import { ta2 } from './ta2.mjs';
 import { DESC } from './descriptions-muscles.mjs';
 import { ZA } from './sources.mjs';
+import { MeshBVH } from 'three-mesh-bvh';
+import { REGIONS, regionsOs, regionsPermises, MARGE_DECOUPE, SEUIL, DECOUPE, BUDGET_DEMARRAGE, BUDGET_DEMANDE } from './regions.mjs';
+import { norm, cles } from './fibres-cles.mjs';
 
 await MeshoptSimplifier.ready;
 const SRC = ZA + 'repo/Resources/Models/FBX/';
 const OUT = '../docs/donnees/';
 fs.mkdirSync(OUT, { recursive: true });
+const ARGS = process.argv.slice(2), iReg = ARGS.indexOf('--regions');
+const MODE_REGIONS = iReg >= 0;
+const demandees = MODE_REGIONS && ARGS[iReg + 1] && !/^--/.test(ARGS[iReg + 1]) ? ARGS[iReg + 1].split(',') : Object.keys(REGIONS);
 
 // Classes de couleur (index d'attribut par sommet, couleurs définies dans l'appli)
 const C = { os: 0, cartilage: 1, dent: 2, muscle: 3, tendon: 4, ligament: 5, capsule: 6, nerf: 7, peau: 8, fascia: 9, graisse: 11, origine: 12, terminaison: 13, moelle: 14,
@@ -194,17 +203,18 @@ const RATIO = { os: 0.2, muscles: 0.1, fascias: 0.25, ligaments: 0.18, capsules:
 const MIN = { os: 60, muscles: 50, fascias: 30, ligaments: 24, capsules: 30, nerfs: 16, peau: 30, insertions: 12,
   cardio: 16, respiratoire: 40, digestif: 40, urinaire: 40, genital: 40, endocrinien: 30, lymphatique: 20, encephale: 30, sens: 30 };
 
+// Extraction à pleine résolution, dans l'ordre des pièces ; les pièces fusionnées (peau) viennent à la fin
+const bruts = [];
 const fusionnes = new Map();
-const resultat = [];
 for (const p of pieces) {
-  let m = extraire(p.mesh, p.systeme, p.chemin);
+  const m = extraire(p.mesh, p.systeme, p.chemin);
   if (!m.I.length) continue;
   if (p.fusion) {
     if (!fusionnes.has(p.fusion)) fusionnes.set(p.fusion, { p, parts: [] });
     fusionnes.get(p.fusion).parts.push(m);
     continue;
   }
-  resultat.push({ p, m: alleger(m, RATIO[p.couche], MIN[p.couche]) });
+  bruts.push({ p, m });
 }
 // Pièces fusionnées (peau) : soudure des régions entre elles AVANT l'allègement, pour éviter les fentes
 for (const [nom, f] of fusionnes) {
@@ -223,73 +233,258 @@ for (const [nom, f] of fusionnes) {
     }
   }
   const brut = { P: new Float32Array(P), K: Uint8Array.from(K), I: new Uint32Array(I) };
-  resultat.push({ p: { ...f.p, nom, base: nom, cote: '' }, m: alleger(brut, RATIO[f.p.couche], MIN[f.p.couche]) });
+  bruts.push({ p: { ...f.p, nom, base: nom, cote: '' }, m: brut });
 }
 
-// Boîte englobante globale pour la quantification
-const bmin = [1e9, 1e9, 1e9], bmax = [-1e9, -1e9, -1e9];
-for (const { m } of resultat) for (let i = 0; i < m.P.length; i++) { const a = i % 3; if (m.P[i] < bmin[a]) bmin[a] = m.P[i]; if (m.P[i] > bmax[a]) bmax[a] = m.P[i]; }
-
-// Quantification uniforme (même échelle sur les 3 axes, pour garder des normales justes)
-const centre = [0, 1, 2].map(a => (bmin[a] + bmax[a]) / 2);
-const demi = Math.max(...[0, 1, 2].map(a => (bmax[a] - bmin[a]) / 2)) * 1.001;
-// ---------- Écriture des paquets ----------
-const paquets = {};
-const manifeste = { centre: null, echelle: null, pieces: [] };
-let id = 0;
-const sansNom = new Set();
-for (const { p, m } of resultat) {
-  const paquet = p.couche === 'insertions' ? 'insertions' : p.couche === 'peau' ? 'peau' : p.systeme === 'muscles' ? 'muscles'
+function paquetDe(p) {
+  return p.couche === 'insertions' ? 'insertions' : p.couche === 'peau' ? 'peau' : p.systeme === 'muscles' ? 'muscles'
     : /respiratoire|digestif|urinaire|genital|endocrinien/.test(p.systeme) ? 'visceres' : p.systeme;
-  if (!paquets[paquet]) paquets[paquet] = { blocs: [], taille: 0 };
-  const pk = paquets[paquet];
-  let vc = m.P.length / 3;
-  const grand = vc > 65535;
-  const q = new Int16Array(vc * 3);
-  for (let i = 0; i < m.P.length; i++) { const a = i % 3; q[i] = Math.round((m.P[i] - centre[a]) / demi * 32767); }
-  const n = normales(m);
-  const idx = grand ? Uint32Array.from(m.I) : Uint16Array.from(m.I);
-  const pad = b => Buffer.concat([b, Buffer.alloc((4 - (b.length % 4)) % 4)]);
-  const bp = pad(Buffer.from(q.buffer)), bn = pad(Buffer.from(n.buffer)), bk = pad(Buffer.from(m.K.buffer, m.K.byteOffset, m.K.byteLength)), bi = pad(Buffer.from(idx.buffer));
-  const o = pk.taille;
-  pk.blocs.push(bp, bn, bk, bi); pk.taille += bp.length + bn.length + bk.length + bi.length;
-  // centre / rayon
-  let cx = 0, cy = 0, cz = 0; for (let i = 0; i < m.P.length; i += 3) { cx += m.P[i]; cy += m.P[i + 1]; cz += m.P[i + 2]; }
-  cx /= vc; cy /= vc; cz /= vc; let r = 0; for (let i = 0; i < m.P.length; i += 3) r = Math.max(r, Math.hypot(m.P[i] - cx, m.P[i + 1] - cy, m.P[i + 2] - cz));
-  const piece = {
-    id: id++, en: p.base, cote: p.cote, sys: p.systeme, couche: p.couche, chemin: p.chemin.replace(/g( >|$)/g, '$1'),
-    paquet, vc, ic: m.I.length, u32: grand ? 1 : 0, o, ob: [bp.length, bn.length, bk.length],
-    c: [+cx.toFixed(1), +cy.toFixed(1), +cz.toFixed(1)], r: +r.toFixed(1),
-  };
-  if (p.couche === 'muscles') piece.prof = coucheMuscle(p.base);
-  if (p.couche !== 'insertions') { piece.fr = nomFr(p.base) || p.base.replace(/[()]/g, '').replace(/_/g, ' '); if (!nomFr(p.base)) sansNom.add(p.base); const t = ta2(p.base); if (t && t.la) piece.la = t.la; }
-  else {
-    const mm = p.nom.match(/^(.*?)([oe])(\d*)([lr]?)$/);
-    piece.muscle = mm ? mm[1] : p.base; piece.type = mm ? mm[2] : '?';
-    piece.cote = mm && mm[4] ? (mm[4] === 'l' ? 'G' : 'D') : '';
-  }
-  manifeste.pieces.push(piece);
 }
-manifeste.centre = centre.map(x => +x.toFixed(4)); manifeste.echelle = demi / 32767;
-for (const [nom, pk] of Object.entries(paquets)) fs.writeFileSync(OUT + nom + '.bin', Buffer.concat(pk.blocs));
-fs.writeFileSync(OUT + 'manifeste.json', JSON.stringify(manifeste));
-const fichesOut = {};
-for (const p of manifeste.pieces) if (p.couche !== 'insertions' && !fichesOut[p.en]) { const f = fiche(p.en); if (f) fichesOut[p.en] = f; }
-const sansDesc = [];
-for (const p of manifeste.pieces) if (p.couche === 'muscles') {
-  const d = DESC[p.en];
-  if (!d) { sansDesc.push(p.en); continue; }
-  if (!fichesOut[p.en]) fichesOut[p.en] = { texte: '', source: '' };
-  fichesOut[p.en].muscle = { o: d[0], t: d[1], i: d[2], a: d[3] };
-}
-console.log('muscles sans fiche courte :', [...new Set(sansDesc)].join(', ') || 'aucun');
-fs.writeFileSync(OUT + 'fiches.json', JSON.stringify(fichesOut));
-console.log('fiches', Object.keys(fichesOut).length, 'sans nom français', sansNom.size, [...sansNom].join(', '));
 
-// Résumé
-const parCouche = {};
-for (const p of manifeste.pieces) { parCouche[p.couche] = parCouche[p.couche] || [0, 0]; parCouche[p.couche][0]++; parCouche[p.couche][1] += p.ic / 3; }
-console.log(parCouche);
-for (const nom of Object.keys(paquets)) console.log(nom, (fs.statSync(OUT + nom + '.bin').size / 1e6).toFixed(2), 'Mo');
-console.log('pièces en miroir corrigées', nbMiroirs);
-console.log('boîte', bmin.map(x => x.toFixed(1)), bmax.map(x => x.toFixed(1)));
+// ---------- Régions détaillées ----------
+// Champ « appartenance » : pour chaque région, phi = (distance aux os de la région) − (distance aux autres os),
+// précalculé sur une grille de 1 cm puis interpolé ; phi ≤ 0 = dans la région. Les découpes ajoutent une marge de contexte.
+function bvhDe(parts) {
+  let nv = 0, ni = 0; parts.forEach(m => { nv += m.P.length / 3; ni += m.I.length; });
+  const P = new Float32Array(nv * 3), I = new Uint32Array(ni); let ov = 0, oi = 0;
+  for (const m of parts) { P.set(m.P, ov * 3); for (let k = 0; k < m.I.length; k++) I[oi + k] = m.I[k] + ov; ov += m.P.length / 3; oi += m.I.length; }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(P, 3)); g.setIndex(new THREE.BufferAttribute(I, 1));
+  return new MeshBVH(g);
+}
+let grille = null;
+function preparerGrille() {
+  if (grille) return grille;
+  const t0 = Date.now();
+  const classes = new Map(), osRegions = new Map(), nonClasses = [];
+  for (const b of bruts) if (b.p.couche === 'os') {
+    const r = regionsOs(b.p.base, b.p.chemin);
+    if (!r) { nonClasses.push(b.p.nom); continue; }
+    osRegions.set(b, r);
+    const k = r.join('+'); if (!classes.has(k)) classes.set(k, { regions: r, parts: [] });
+    classes.get(k).parts.push(alleger(b.m, RATIO.os, MIN.os));
+  }
+  if (nonClasses.length) console.log('os sans région (classés par la géométrie) :', nonClasses.join(', '));
+  const liste = [...classes.values()].map(c => ({ regions: c.regions, bvh: bvhDe(c.parts) }));
+  const bmin = [1e9, 1e9, 1e9], bmax = [-1e9, -1e9, -1e9];
+  for (const { m } of bruts) for (let i = 0; i < m.P.length; i++) { const a = i % 3; if (m.P[i] < bmin[a]) bmin[a] = m.P[i]; if (m.P[i] > bmax[a]) bmax[a] = m.P[i]; }
+  const PAS = 1, o = bmin.map(x => Math.floor(x) - 2), n = [0, 1, 2].map(a => Math.ceil((bmax[a] + 2 - o[a]) / PAS) + 1);
+  const nc = liste.length, dist = new Float32Array(n[0] * n[1] * n[2] * nc);
+  const pt = new THREE.Vector3(), cible = {}, DMAX = 80;
+  for (let k = 0, c = 0; k < n[2]; k++) for (let j = 0; j < n[1]; j++) for (let i = 0; i < n[0]; i++, c++) {
+    pt.set(o[0] + i * PAS, o[1] + j * PAS, o[2] + k * PAS);
+    for (let q = 0; q < nc; q++) { const h = liste[q].bvh.closestPointToPoint(pt, cible, 0, DMAX); dist[c * nc + q] = h ? h.distance : DMAX; }
+  }
+  console.log('grille des régions', n.join('×'), 'cellules,', nc, 'classes d’os,', Date.now() - t0, 'ms');
+  grille = { o, n, PAS, liste, dist, osRegions };
+  return grille;
+}
+// sansCeinture : pour un membre, les os des ceintures comptent comme « autres » (découpe de la peau à la racine du membre)
+function champRegion(nomR, sansCeinture) {
+  const { n, liste, dist } = preparerGrille(), nc = liste.length, phi = new Float32Array(n[0] * n[1] * n[2]);
+  const membre = /^membre-/.test(nomR);
+  const dans = liste.map(c => c.regions.indexOf(nomR) >= 0 && !(sansCeinture && membre && c.regions.length > 1));
+  for (let c = 0; c < phi.length; c++) {
+    let dR = 1e9, dO = 1e9;
+    for (let q = 0; q < nc; q++) { const d = dist[c * nc + q]; if (dans[q]) { if (d < dR) dR = d; } else if (d < dO) dO = d; }
+    phi[c] = dR - dO;
+  }
+  return phi;
+}
+function phiSommets(phiG, m) {
+  const { o, n, PAS } = grille, f = new Float32Array(m.P.length / 3);
+  const cl = (x, a) => Math.min(n[a] - 1.001, Math.max(0, (x - o[a]) / PAS));
+  for (let v = 0; v < f.length; v++) {
+    const x = cl(m.P[v * 3], 0), y = cl(m.P[v * 3 + 1], 1), z = cl(m.P[v * 3 + 2], 2);
+    const i = Math.floor(x), j = Math.floor(y), k = Math.floor(z), fx = x - i, fy = y - j, fz = z - k;
+    const g = (a, b, c) => phiG[((k + c) * n[1] + (j + b)) * n[0] + (i + a)];
+    const x00 = g(0, 0, 0) * (1 - fx) + g(1, 0, 0) * fx, x10 = g(0, 1, 0) * (1 - fx) + g(1, 1, 0) * fx;
+    const x01 = g(0, 0, 1) * (1 - fx) + g(1, 0, 1) * fx, x11 = g(0, 1, 1) * (1 - fx) + g(1, 1, 1) * fx;
+    f[v] = (x00 * (1 - fy) + x10 * fy) * (1 - fz) + (x01 * (1 - fy) + x11 * fy) * fz;
+  }
+  return f;
+}
+// Découpe d'un maillage le long de phi = 0 (points interpolés sur les arêtes : bord net), îlots minuscules écartés
+function decouper(m, phi) {
+  const nv = m.P.length / 3;
+  let dedans = 0; for (let v = 0; v < nv; v++) if (phi[v] <= 0) dedans++;
+  if (dedans === nv) return m;
+  if (!dedans) return null;
+  const P = Array.from(m.P), K = Array.from(m.K), I = [], aretes = new Map();
+  const milieu = (a, b) => { // a dedans, b dehors
+    const cle = a < b ? a * nv + b : b * nv + a;
+    let id = aretes.get(cle);
+    if (id === undefined) {
+      const t = phi[a] / (phi[a] - phi[b]);
+      id = P.length / 3; aretes.set(cle, id);
+      for (let c = 0; c < 3; c++) P.push(m.P[a * 3 + c] + t * (m.P[b * 3 + c] - m.P[a * 3 + c]));
+      K.push(m.K[a]);
+    }
+    return id;
+  };
+  for (let f = 0; f < m.I.length; f += 3) {
+    const t = [m.I[f], m.I[f + 1], m.I[f + 2]], d = t.map(v => phi[v] <= 0), nd = d[0] + d[1] + d[2];
+    if (nd === 3) { I.push(t[0], t[1], t[2]); continue; }
+    if (!nd) continue;
+    // rotation (l'ordre des sommets, donc l'orientation, est conservé)
+    let r = 0;
+    if (nd === 1) { while (!d[r]) r++; } else { while (d[r]) r++; r = (r + 1) % 3; } // nd = 2 : r = premier dedans après le sommet dehors
+    const a = t[r], b = t[(r + 1) % 3], c = t[(r + 2) % 3];
+    if (nd === 1) I.push(a, milieu(a, b), milieu(a, c));
+    else { const mbc = milieu(b, c), mac = milieu(a, c); I.push(a, b, mbc, a, mbc, mac); }
+  }
+  // composantes connexes (par sommets partagés) : on retire celles de moins de 5 % de la pièce
+  const nt = P.length / 3, par = new Int32Array(nt).map((_, i) => i);
+  const rac = x => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; };
+  for (let f = 0; f < I.length; f += 3) { const a = rac(I[f]), b = rac(I[f + 1]), c = rac(I[f + 2]); par[b] = a; par[rac(c)] = a; }
+  const taille = new Map();
+  for (let f = 0; f < I.length; f += 3) { const r = rac(I[f]); taille.set(r, (taille.get(r) || 0) + 1); }
+  const total = I.length / 3, J = [];
+  for (let f = 0; f < I.length; f += 3) { const tc = taille.get(rac(I[f])); if (tc >= 8 && tc >= 0.05 * total) J.push(I[f], I[f + 1], I[f + 2]); }
+  if (!J.length) return null;
+  const remap = new Int32Array(nt).fill(-1), P2 = [], K2 = [], I2 = new Uint32Array(J.length);
+  for (let i = 0; i < J.length; i++) {
+    const v = J[i];
+    if (remap[v] < 0) { remap[v] = P2.length / 3; P2.push(P[v * 3], P[v * 3 + 1], P[v * 3 + 2]); K2.push(K[v]); }
+    I2[i] = remap[v];
+  }
+  return { P: new Float32Array(P2), K: Uint8Array.from(K2), I: I2 };
+}
+
+const DEMARRAGE = new Set(['os', 'muscles', 'articulations', 'nerfs', 'peau']);
+function construireRegion(nomR) {
+  if (!REGIONS[nomR]) throw new Error('région inconnue : ' + nomR + ' (connues : ' + Object.keys(REGIONS).join(', ') + ')');
+  const t0 = Date.now();
+  const { osRegions } = preparerGrille();
+  const phiG = champRegion(nomR), phiPeau = champRegion(nomR, true);
+  const garde = new Map(); let coupees = 0;
+  for (const b of bruts) {
+    const { p, m } = b;
+    if (p.couche === 'insertions') continue;
+    if (osRegions.has(b)) { if (osRegions.get(b).indexOf(nomR) >= 0) garde.set(b, m); continue; }
+    const permises = regionsPermises(p);
+    if (permises && permises.indexOf(nomR) < 0) continue;
+    const phi = phiSommets(p.couche === 'peau' ? phiPeau : phiG, m);
+    if (DECOUPE.has(p.couche)) {
+      const marge = MARGE_DECOUPE[p.couche];
+      const d = decouper(m, phi.map(x => x - marge)); if (d) { garde.set(b, d); if (d !== m) coupees++; } continue;
+    }
+    let n = 0; for (let v = 0; v < phi.length; v++) if (phi[v] <= 0) n++;
+    if (n >= SEUIL * phi.length) garde.set(b, m);
+  }
+  // insertions : celles des muscles gardés (pour les fiches et le sens des fibres)
+  const clesGardees = new Set();
+  for (const b of garde.keys()) if (b.p.couche === 'muscles') for (const k of cles(b.p.base)) clesGardees.add(k + '|' + b.p.cote);
+  for (const b of bruts) if (b.p.couche === 'insertions') {
+    const mm = b.p.nom.match(/^(.*?)([oe])(\d*)([lr]?)$/);
+    const cote = mm && mm[4] ? (mm[4] === 'l' ? 'G' : 'D') : '';
+    if (clesGardees.has(norm(mm ? mm[1] : b.p.base) + '|' + cote)) garde.set(b, b.m);
+  }
+  const liste = bruts.filter(b => garde.has(b)).map(b => ({ p: b.p, m: garde.get(b) }));
+  // facteur de détail : le plus grand qui tient dans le budget (prévision d'après les cibles de l'allègement)
+  const cible = (x, F) => { const tri = x.m.I.length / 3; return Math.min(tri, Math.max(MIN[x.p.couche] * F, Math.round(tri * Math.min(1, RATIO[x.p.couche] * F)))); };
+  const facteur = (l, budget) => {
+    let a = 1, z = 60;
+    if (l.reduce((s, x) => s + cible(x, z), 0) <= budget) return z;
+    for (let it = 0; it < 40; it++) { const F = (a + z) / 2; if (l.reduce((s, x) => s + cible(x, F), 0) <= budget) a = F; else z = F; }
+    return a;
+  };
+  const dem = liste.filter(x => DEMARRAGE.has(paquetDe(x.p))), aut = liste.filter(x => !DEMARRAGE.has(paquetDe(x.p)));
+  let F = facteur(dem, BUDGET_DEMARRAGE);
+  const F2 = facteur(aut, BUDGET_DEMANDE);
+  const OUTR = OUT + nomR + '/';
+  for (let essai = 0; essai < 8; essai++) {
+    const res = liste.map(x => {
+      const f = DEMARRAGE.has(paquetDe(x.p)) ? F : F2;
+      return { p: x.p, m: alleger(x.m, Math.min(1, RATIO[x.p.couche] * f), Math.round(MIN[x.p.couche] * f)) };
+    });
+    const tri = res.filter(x => DEMARRAGE.has(paquetDe(x.p))).reduce((s, x) => s + x.m.I.length / 3, 0);
+    if (tri > 615000) { console.log('  ', Math.round(tri / 1000), 'k triangles au démarrage : trop, facteur réduit'); F *= 0.95; continue; }
+    const boite = [[1e9, 1e9, 1e9], [-1e9, -1e9, -1e9]];
+    for (const { m } of res) for (let i = 0; i < m.P.length; i++) { const a = i % 3; boite[0][a] = Math.min(boite[0][a], m.P[i]); boite[1][a] = Math.max(boite[1][a], m.P[i]); }
+    ecrire(res, OUTR, { region: nomR, nom: REGIONS[nomR], boite: boite.map(b => b.map(x => +x.toFixed(1))) });
+    const octets = [...DEMARRAGE].reduce((s, n) => s + (fs.existsSync(OUTR + n + '.bin') ? fs.statSync(OUTR + n + '.bin').size : 0), 0) + fs.statSync(OUTR + 'manifeste.json').size;
+    if (octets > 8.9e6) { console.log('  ', (octets / 1e6).toFixed(1), 'Mo au démarrage : trop, facteur réduit'); F *= 0.95; continue; }
+    // fichiers d'un ancien passage devenus inutiles (paquet sans pièce)
+    for (const f of fs.readdirSync(OUTR)) if (/\.bin$/.test(f) && !/^(ao-|fibres-)/.test(f) && !res.some(x => paquetDe(x.p) + '.bin' === f)) fs.unlinkSync(OUTR + f);
+    console.log('■ région', nomR, ':', res.length, 'pièces dont', coupees, 'découpées au bord ;', Math.round(tri / 1000), 'k triangles au démarrage, facteur',
+      F.toFixed(2), '(à la demande', F2.toFixed(2) + ') ;', (octets / 1e6).toFixed(2), 'Mo ;', Math.round((Date.now() - t0) / 1000), 's');
+    return;
+  }
+  throw new Error('région ' + nomR + ' : budget impossible à tenir');
+}
+
+// ---------- Lancement ----------
+if (!MODE_REGIONS) ecrire(bruts.map(({ p, m }) => ({ p, m: alleger(m, RATIO[p.couche], MIN[p.couche]) })), OUT);
+else for (const r of demandees) construireRegion(r);
+
+// ---------- Écriture d'un jeu de données (paquets, manifeste, fiches) ----------
+function ecrire(resultat, OUT, extra) {
+  fs.mkdirSync(OUT, { recursive: true });
+  // Boîte englobante globale pour la quantification
+  const bmin = [1e9, 1e9, 1e9], bmax = [-1e9, -1e9, -1e9];
+  for (const { m } of resultat) for (let i = 0; i < m.P.length; i++) { const a = i % 3; if (m.P[i] < bmin[a]) bmin[a] = m.P[i]; if (m.P[i] > bmax[a]) bmax[a] = m.P[i]; }
+
+  // Quantification uniforme (même échelle sur les 3 axes, pour garder des normales justes)
+  const centre = [0, 1, 2].map(a => (bmin[a] + bmax[a]) / 2);
+  const demi = Math.max(...[0, 1, 2].map(a => (bmax[a] - bmin[a]) / 2)) * 1.001;
+  // ---------- Écriture des paquets ----------
+  const paquets = {};
+  const manifeste = { centre: null, echelle: null, pieces: [] };
+  let id = 0;
+  const sansNom = new Set();
+  for (const { p, m } of resultat) {
+    const paquet = paquetDe(p);
+    if (!paquets[paquet]) paquets[paquet] = { blocs: [], taille: 0 };
+    const pk = paquets[paquet];
+    let vc = m.P.length / 3;
+    const grand = vc > 65535;
+    const q = new Int16Array(vc * 3);
+    for (let i = 0; i < m.P.length; i++) { const a = i % 3; q[i] = Math.round((m.P[i] - centre[a]) / demi * 32767); }
+    const n = normales(m);
+    const idx = grand ? Uint32Array.from(m.I) : Uint16Array.from(m.I);
+    const pad = b => Buffer.concat([b, Buffer.alloc((4 - (b.length % 4)) % 4)]);
+    const bp = pad(Buffer.from(q.buffer)), bn = pad(Buffer.from(n.buffer)), bk = pad(Buffer.from(m.K.buffer, m.K.byteOffset, m.K.byteLength)), bi = pad(Buffer.from(idx.buffer));
+    const o = pk.taille;
+    pk.blocs.push(bp, bn, bk, bi); pk.taille += bp.length + bn.length + bk.length + bi.length;
+    // centre / rayon
+    let cx = 0, cy = 0, cz = 0; for (let i = 0; i < m.P.length; i += 3) { cx += m.P[i]; cy += m.P[i + 1]; cz += m.P[i + 2]; }
+    cx /= vc; cy /= vc; cz /= vc; let r = 0; for (let i = 0; i < m.P.length; i += 3) r = Math.max(r, Math.hypot(m.P[i] - cx, m.P[i + 1] - cy, m.P[i + 2] - cz));
+    const piece = {
+      id: id++, en: p.base, cote: p.cote, sys: p.systeme, couche: p.couche, chemin: p.chemin.replace(/g( >|$)/g, '$1'),
+      paquet, vc, ic: m.I.length, u32: grand ? 1 : 0, o, ob: [bp.length, bn.length, bk.length],
+      c: [+cx.toFixed(1), +cy.toFixed(1), +cz.toFixed(1)], r: +r.toFixed(1),
+    };
+    if (p.couche === 'muscles') piece.prof = coucheMuscle(p.base);
+    if (p.couche !== 'insertions') { piece.fr = nomFr(p.base) || p.base.replace(/[()]/g, '').replace(/_/g, ' '); if (!nomFr(p.base)) sansNom.add(p.base); const t = ta2(p.base); if (t && t.la) piece.la = t.la; }
+    else {
+      const mm = p.nom.match(/^(.*?)([oe])(\d*)([lr]?)$/);
+      piece.muscle = mm ? mm[1] : p.base; piece.type = mm ? mm[2] : '?';
+      piece.cote = mm && mm[4] ? (mm[4] === 'l' ? 'G' : 'D') : '';
+    }
+    manifeste.pieces.push(piece);
+  }
+  manifeste.centre = centre.map(x => +x.toFixed(4)); manifeste.echelle = demi / 32767;
+  if (extra) Object.assign(manifeste, extra);
+  for (const [nom, pk] of Object.entries(paquets)) fs.writeFileSync(OUT + nom + '.bin', Buffer.concat(pk.blocs));
+  fs.writeFileSync(OUT + 'manifeste.json', JSON.stringify(manifeste));
+  const fichesOut = {};
+  for (const p of manifeste.pieces) if (p.couche !== 'insertions' && !fichesOut[p.en]) { const f = fiche(p.en); if (f) fichesOut[p.en] = f; }
+  const sansDesc = [];
+  for (const p of manifeste.pieces) if (p.couche === 'muscles') {
+    const d = DESC[p.en];
+    if (!d) { sansDesc.push(p.en); continue; }
+    if (!fichesOut[p.en]) fichesOut[p.en] = { texte: '', source: '' };
+    fichesOut[p.en].muscle = { o: d[0], t: d[1], i: d[2], a: d[3] };
+  }
+  console.log('muscles sans fiche courte :', [...new Set(sansDesc)].join(', ') || 'aucun');
+  fs.writeFileSync(OUT + 'fiches.json', JSON.stringify(fichesOut));
+  console.log('fiches', Object.keys(fichesOut).length, 'sans nom français', sansNom.size, [...sansNom].join(', '));
+
+  // Résumé
+  const parCouche = {};
+  for (const p of manifeste.pieces) { parCouche[p.couche] = parCouche[p.couche] || [0, 0]; parCouche[p.couche][0]++; parCouche[p.couche][1] += p.ic / 3; }
+  console.log(parCouche);
+  for (const nom of Object.keys(paquets)) console.log(nom, (fs.statSync(OUT + nom + '.bin').size / 1e6).toFixed(2), 'Mo');
+  console.log('pièces en miroir corrigées', nbMiroirs);
+  console.log('boîte', bmin.map(x => x.toFixed(1)), bmax.map(x => x.toFixed(1)));
+}

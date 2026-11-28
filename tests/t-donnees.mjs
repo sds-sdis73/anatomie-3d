@@ -1,6 +1,7 @@
 // Cohérence des données et du cache hors connexion.
 import fs from 'fs';
 import path from 'path';
+import vm from 'vm';
 import { DOCS, Rapport } from './commun.mjs';
 
 const r = new Rapport('Données, versions et hors connexion');
@@ -61,6 +62,12 @@ const F = JSON.parse(fs.readFileSync(path.join(D, 'fiches.json'), 'utf8'));
 const M0 = JSON.parse(fs.readFileSync(path.join(D, 'manifeste.json'), 'utf8'));
 const sansFiche = [...new Set(M0.pieces.filter(p => p.couche === 'muscles' && !(F[p.en] && F[p.en].muscle)).map(p => p.en))];
 r.ok(!sansFiche.length, 'chaque muscle a sa fiche (origine, terminaison, innervation, action)', sansFiche.slice(0, 5).join(', '));
+for (const jeu of jeux.slice(1)) {
+  const FR = fs.existsSync(path.join(jeu.dir, 'fiches.json')) ? JSON.parse(fs.readFileSync(path.join(jeu.dir, 'fiches.json'), 'utf8')) : {};
+  const MR = JSON.parse(fs.readFileSync(path.join(jeu.dir, 'manifeste.json'), 'utf8'));
+  const sf = [...new Set(MR.pieces.filter(p => p.couche === 'muscles' && !(FR[p.en] && FR[p.en].muscle)).map(p => p.en))];
+  r.ok(!sf.length, jeu.nom + ' : chaque muscle a sa fiche', sf.slice(0, 5).join(', '));
+}
 
 // versions cohérentes entre app.js, index.html et sw.js
 const app = fs.readFileSync(path.join(DOCS, 'app.js'), 'utf8');
@@ -78,5 +85,21 @@ for (const m of dansSw) r.ok(m[2] === V && fs.existsSync(path.join(D, m[1])), 's
 const tousBins = fs.readdirSync(D).filter(f => f.endsWith('.bin')).map(f => f.replace('.bin', ''));
 const oublies = tousBins.filter(b => binsSw.map(x => x.replace(/'/g, '')).indexOf(b) < 0);
 r.ok(!oublies.length, 'tous les fichiers de données sont mis en cache pour le hors connexion', 'oubliés : ' + oublies.join(', '));
+
+// Liste réelle du service worker (exécuté hors navigateur) : chaque jeu de données, régions comprises, est complet
+const bac = { self: { addEventListener() {} }, caches: {}, location: {} };
+vm.runInNewContext(sw, bac);
+const liste = Array.isArray(bac.FICHIERS) ? bac.FICHIERS : [];
+r.ok(liste.length > 0, 'sw.js : liste des fichiers lisible (' + liste.length + ' fichiers)');
+const donneesSw = liste.filter(f => /^donnees\//.test(f));
+const absents = donneesSw.filter(f => !fs.existsSync(path.join(DOCS, f.split('?')[0])));
+r.ok(!absents.length, 'sw.js : chaque fichier de données mis en cache existe', absents.slice(0, 5).join(', '));
+const malVersionnes = donneesSw.filter(f => f.split('?v=')[1] !== V);
+r.ok(!malVersionnes.length, 'sw.js : chaque fichier de données porte la version ' + V, malVersionnes.slice(0, 5).join(', '));
+for (const jeu of jeux) {
+  const rel = path.relative(DOCS, jeu.dir).split(path.sep).join('/');
+  const manquants = fs.readdirSync(jeu.dir).filter(f => /\.(bin|json)$/.test(f)).filter(f => donneesSw.indexOf(rel + '/' + f + '?v=' + V) < 0);
+  r.ok(!manquants.length, jeu.nom + ' : tous ses fichiers sont mis en cache pour le hors connexion', 'oubliés : ' + manquants.join(', '));
+}
 
 export default r;
