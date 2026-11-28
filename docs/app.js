@@ -278,6 +278,9 @@
       '    brille = 0.07 + 0.09 * fib * fadeF;',
       '  }'].join('\n') : '',
       '  float occ = mix(0.15, 1.0, pow(clamp(vAo, 0.0, 1.0), 1.5));',
+      // près du plan de coupe, les creux mis à nu (canal vertébral, intérieur du crâne) gardaient l'ombre calculée pour le
+      // corps fermé et paraissaient noirs : on relève cette ombre sur les 4 cm qui bordent la coupe
+      avecCoupe ? '  occ = mix(occ, max(occ, 0.8), 1.0 - smoothstep(0.0, 4.0, coupe.w - dot(vP, coupe.xyz)));' : '',
       '  vec3 col = alb * m.rgb * 1.4 * occ + vec3(m.a) * brille * occ + ajout;',
       // face intérieure vue à travers la coupe : teinte unie de la tranche
       avecCoupe ? '  if (!gl_FrontFacing) col = vC * vec3(0.66, 0.6, 0.58) + ajout;' : '',
@@ -2037,7 +2040,8 @@
   }
   function poserCoupe(plan) {
     var ax = PLANS[plan][3], f = 0.5;
-    if (boite) f = (controls.target[ax] - boite.min[ax]) / Math.max(1, boite.max[ax] - boite.min[ax]); // par le centre de la vue
+    // par le centre de la vue ; la coupe sagittale part de la ligne médiane (corps symétrique, et le cadrage peut décaler la vue)
+    if (boite) f = ((plan === 'sagittal' ? 0 : controls.target[ax]) - boite.min[ax]) / Math.max(1, boite.max[ax] - boite.min[ax]);
     etat.coupe = { plan: plan, f: Math.max(0.02, Math.min(0.98, f)), inverse: etat.coupe && etat.coupe.plan === plan ? etat.coupe.inverse : false };
     appliquerCoupe();
   }
@@ -2089,6 +2093,7 @@
   // Sonde de lecture pour les tests automatiques (aucun effet sur l'usage normal)
   var sonde = window.__anatomie = {
     pret: false, journal: [], version: VERSION, etat: etat,
+    planCoupe: function () { return etat.coupe ? UNI.coupe.value.toArray() : null; },
     regionGardee: function (d) { return gardes[d] || ''; },
     boiteRegion: function () { return boiteRegion(); }, camera: camera, controls: controls, renderer: renderer, scene: scene,
     manifeste: function () { return M; },

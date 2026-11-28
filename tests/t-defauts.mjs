@@ -224,6 +224,17 @@ export default async function (nav, url) {
     const taches = await page.evaluate(() => window.__anatomie.tachesCoupe ? window.__anatomie.tachesCoupe() : -1);
     r.ok(taches >= 0 && taches < 0.002, 'coupe sagittale du rachis : pas de taches noires sur les faces coupées', 'part de pixels noirs dans les tranches : ' + taches);
     await ui.coupe(page, null);
+    await ui.region(page, 'tete-cou');
+    await ui.niveau(page, 0);
+    await ui.coupe(page, 'sagittal');
+    await page.evaluate(() => { const a = window.__anatomie, d = new THREE.Vector3(1, 0.15, 0.3).normalize(); a.controls.target.set(0, 155, 0); a.camera.position.set(0, 155, 0).addScaledVector(d, 75); a.controls.update(); });
+    await attendre(400);
+    const tachesTete = await page.evaluate(() => window.__anatomie.tachesCoupe ? window.__anatomie.tachesCoupe() : -1);
+    const plan = await page.evaluate(() => window.__anatomie.planCoupe ? window.__anatomie.planCoupe() : null); // [nx, ny, nz, w]
+    const milieu = plan && plan[0] === 1 && Math.abs(plan[3]) < 1 ? 0 : JSON.stringify(plan);
+    r.ok(tachesTete >= 0 && tachesTete < 0.004, 'coupe sagittale de la tête : pas de taches noires (intérieur du crâne)', 'part de pixels noirs : ' + tachesTete);
+    r.ok(milieu === 0, 'la coupe sagittale part de la ligne médiane');
+    await ui.coupe(page, null);
   });
 
   // ---------- 17. Cadrage des régions dans la zone libre ----------
