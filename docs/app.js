@@ -5,6 +5,11 @@
   'use strict';
 
   var VERSION = '1.3.0';
+  // Version des DONNÉES des régions, distincte de celle de l'appli (même valeur dans sw.js) : une mise à jour de l'appli
+  // n'efface pas les régions déjà gardées sur l'iPad. À changer seulement quand les fichiers des régions changent.
+  var DONNEES_REGIONS = '1.3.0';
+  var CACHE_REGIONS = 'anatomie3d-regions-' + DONNEES_REGIONS;
+  function versionPour(dossier) { return dossier ? DONNEES_REGIONS : VERSION; }
   var DONNEES = 'donnees/';
   var PAQUETS = ['os', 'muscles', 'articulations', 'nerfs', 'peau'];
 
@@ -337,17 +342,35 @@
     if (texte) { el('texte-prog').textContent = texte; el('accueil-texte').textContent = texte; }
   }
 
-  function charger(url, type, progres) {
+  // Téléchargement. « attendu » : taille minimale d'un fichier binaire d'après le manifeste ; une réponse plus courte
+  // (page HTML servie à la place, fichier tronqué) est refusée au lieu de faire planter la construction.
+  // « groupe » : liste où ranger la requête pour pouvoir l'abandonner.
+  function erreur(texte, statut) { var e = new Error(texte); e.statut = statut || 0; return e; }
+  function charger(url, type, progres, attendu, groupe) {
     return new Promise(function (ok, ko) {
       var x = new XMLHttpRequest();
       x.open('GET', url, true);
       x.responseType = type;
       x.onprogress = function (e) { if (progres) progres(e.loaded, e.lengthComputable ? e.total : 0); };
-      x.onload = function () { if (x.status === 200 || (x.status === 0 && x.response)) ok(x.response); else ko(new Error(url + ' : ' + x.status)); };
-      x.onerror = function () { ko(new Error('Réseau : ' + url)); };
+      x.onload = function () {
+        var rep = x.response;
+        if (!(x.status === 200 || (x.status === 0 && rep))) return ko(erreur(url + ' : ' + x.status, x.status));
+        if (type === 'json' && (rep === null || typeof rep !== 'object')) { rep = lireJSON(rep); if (!rep || typeof rep !== 'object') return ko(erreur('Fichier illisible : ' + url, -1)); }
+        if (type === 'arraybuffer' && (!rep || (attendu && rep.byteLength < attendu))) return ko(erreur('Fichier incomplet ou illisible : ' + url, -1));
+        ok(rep);
+      };
+      x.onerror = function () { ko(erreur('Réseau : ' + url, 0)); };
+      x.onabort = function () { var e = erreur('abandon', 0); e.abandon = true; ko(e); };
+      if (groupe) groupe.push(x);
       x.send();
     });
   }
+  function tailleMin(nom) { // fin de la dernière pièce d'un paquet dans son fichier
+    var t = 0;
+    M.pieces.forEach(function (p) { if (p.paquet === nom) t = Math.max(t, p.o + p.ob[0] + p.ob[1] + p.ob[2] + p.ic * (p.u32 ? 4 : 2)); });
+    return t;
+  }
+  var MSG_HORS_LIGNE = 'Ce contenu n’est pas disponible hors connexion.';
 
   function construireMesh(p, buf) {
     var o = p.o;
@@ -359,6 +382,7 @@
     // légère variation de teinte par muscle pour distinguer les voisins
     var nuance = 1;
     if (p.couche === 'muscles') nuance = 0.9 + ((p.id * 2654435761) % 1000) / 1000 * 0.2;
+    if (PAQUETS.indexOf(p.paquet) >= 0 && p.couche !== 'insertions') etendreContenu(pos, p.vc);
     var col = new Uint8Array(p.vc * 3);
     for (var v = 0; v < p.vc; v++) {
       var k = cls[v], c = PALETTE[k] || PALETTE[10];
@@ -390,6 +414,18 @@
     meshes[p.id] = m;
   }
 
+  // Étendue réelle de ce qui est affiché à l'ouverture (sommets, en unités quantifiées puis en cm), pour le cadrage
+  var contenu = null;
+  function etendreContenu(pos, n) {
+    if (!contenu) contenu = [[32767, 32767, 32767], [-32768, -32768, -32768]];
+    for (var i = 0; i < n * 3; i += 3) for (var k = 0; k < 3; k++) {
+      var q = pos[i + k]; if (q < contenu[0][k]) contenu[0][k] = q; if (q > contenu[1][k]) contenu[1][k] = q;
+    }
+  }
+  function boiteContenu() {
+    if (!contenu || !M) return null;
+    return [0, 1].map(function (j) { return [0, 1, 2].map(function (k) { return Math.round((contenu[j][k] * M.echelle + M.centre[k]) * 10) / 10; }); });
+  }
   function remplir(t, v) { for (var i = 0; i < t.length; i++) t[i] = v; return t; }
   // ombres de contact (os, muscles) et coordonnée des fibres (muscles), dans l'ordre du manifeste
   var AO = { os: null, muscles: null, fs: null, off: {} };
@@ -405,12 +441,20 @@
   }
   // Libère le jeu de données affiché (mémoire de l'iPad : on n'en garde jamais deux à la fois)
   function viderJeu() {
+    // tout ce qui désigne des pièces de l'ancien jeu (numéros, positions) devient faux : on l'efface
+    if (etat.quiz) finQuiz();
+    if (etat.dessin) finDessin();
+    effacerTout();
+    fermerMenu();
+    el('resultats').innerHTML = ''; el('champ-recherche').value = '';
+    ficheEl.classList.add('cache');
     jeu.gen++;
     for (var i = 0; i < meshes.length; i++) if (meshes[i]) meshes[i].geometry.dispose();
     if (groupe) scene.remove(groupe);
     meshes = []; paquetsPrets = {}; paquetsEnCours = {}; AO = { os: null, muscles: null, fs: null, off: {} };
-    fiches = null; indexRecherche = []; M = null; boite = null; jeu.dossier = null;
+    fiches = null; indexRecherche = []; M = null; boite = null; jeu.dossier = null; contenu = null;
     etat.selection = {}; etat.sel = null; etat.masques = {}; etat.isole = null; etat.transp = {}; etat.insertions = false;
+    majEtiquette();
   }
   function calculerBoite() {
     var mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
@@ -420,11 +464,24 @@
     });
     return { min: { x: mn[0], y: mn[1], z: mn[2] }, max: { x: mx[0], y: mx[1], z: mx[2] } };
   }
+  var jeuVoulu = null;     // jeu demandé par l'utilisateur (null : pas encore de choix ; undefined : région en cours de recherche)
+  var jeuEnCours = null, requetesJeu = [];
+  var V_JEU = VERSION;     // version des fichiers du jeu chargé
+  // Le jeu en cours de chargement n'est plus celui qu'on attend : on l'abandonne entre deux étapes
+  function jeuAbandonne(dossier) { return jeuVoulu !== null && jeuVoulu !== undefined && jeuVoulu !== dossier; }
+  function abandonnerSiInutile() {
+    if (jeuEnCours !== null && jeuAbandonne(jeuEnCours)) { var l = requetesJeu; requetesJeu = []; l.forEach(function (x) { try { x.abort(); } catch (e) {} }); }
+  }
+  function verifierJeu(dossier, gen) {
+    if (gen !== jeu.gen || jeuAbandonne(dossier)) { var e = erreur('abandon', 0); e.abandon = true; throw e; }
+  }
   function chargerJeu(dossier, manifesteDeja) {
     sonde.pret = false;
     viderJeu();
     var gen = jeu.gen;
+    jeuEnCours = dossier; requetesJeu = [];
     DONNEES = 'donnees/' + dossier;
+    V_JEU = versionPour(dossier);
     var tailles = {}, recus = {};
     function maj() {
       var t = 0, r = 0;
@@ -433,9 +490,10 @@
     }
     el('accueil-prog').classList.remove('pret');
     progression(0.05, 'Chargement du modèle…');
-    return (manifesteDeja ? Promise.resolve(manifesteDeja) : charger(DONNEES + 'manifeste.json?v=' + VERSION, 'json')).then(function (man) {
+    return (manifesteDeja ? Promise.resolve(manifesteDeja) : charger(DONNEES + 'manifeste.json?v=' + V_JEU, 'json', null, 0, requetesJeu)).then(function (man) {
+      verifierJeu(dossier, gen);
       M = lireJSON(man);
-      if (!M || !M.pieces) throw new Error('manifeste illisible');
+      if (!M || !M.pieces) throw erreur('manifeste illisible', -1);
       groupe = new THREE.Group();
       groupe.scale.setScalar(M.echelle);
       groupe.position.set(M.centre[0], M.centre[1], M.centre[2]);
@@ -444,52 +502,97 @@
       M.pieces.forEach(function (p) { if (PAQUETS.indexOf(p.paquet) >= 0) tailles[p.paquet] = Math.max(tailles[p.paquet] || 0, p.o + p.ob[0] + p.ob[1] + p.ob[2] + p.ic * (p.u32 ? 4 : 2)); });
       var presents = PAQUETS.filter(function (n) { return tailles[n]; }); // une région peut ne pas avoir de peau, de nerfs…
       var details = Promise.all(['ao-os', 'ao-muscles', 'fibres-s'].map(function (n) {
-        return charger(DONNEES + n + '.bin?v=' + VERSION, 'arraybuffer').catch(function () { return null; });
+        return charger(DONNEES + n + '.bin?v=' + V_JEU, 'arraybuffer', null, 0, requetesJeu).catch(function () { return null; });
       })).then(function (b) { preparerAO({ os: b[0], muscles: b[1], fs: b[2] }); });
       return Promise.all([details].concat(presents.map(function (nom) {
-        return charger(DONNEES + nom + '.bin?v=' + VERSION, 'arraybuffer', function (l) { recus[nom] = l; maj(); }).then(function (buf) {
+        return charger(DONNEES + nom + '.bin?v=' + V_JEU, 'arraybuffer', function (l) { recus[nom] = l; maj(); }, tailles[nom], requetesJeu).then(function (buf) {
           recus[nom] = tailles[nom]; maj();
           return { nom: nom, buf: buf };
         });
       }))).then(function (r) { return r.slice(1); });
     }).then(function (res) {
-      if (gen !== jeu.gen) throw new Error('chargement remplacé');
+      verifierJeu(dossier, gen);
       progression(0.95, 'Construction du modèle…');
       var parPaquet = {};
       res.forEach(function (r) { parPaquet[r.nom] = r.buf; });
-      // construction en plusieurs passes pour laisser respirer l'affichage
+      // construction en plusieurs passes pour laisser respirer l'affichage ; une erreur dans un lot est rattrapée
       var liste = M.pieces.filter(function (p) { return parPaquet[p.paquet]; });
-      PAQUETS.forEach(function (n) { paquetsPrets[n] = true; });
       var i = 0;
-      return new Promise(function (ok) {
+      return new Promise(function (ok, ko) {
         (function lot() {
-          var fin = Math.min(liste.length, i + 120);
-          for (; i < fin; i++) construireMesh(liste[i], parPaquet[liste[i].paquet]);
-          progression(0.95 + 0.05 * i / Math.max(1, liste.length));
+          try {
+            verifierJeu(dossier, gen);
+            var fin = Math.min(liste.length, i + 120);
+            for (; i < fin; i++) construireMesh(liste[i], parPaquet[liste[i].paquet]);
+            progression(0.95 + 0.05 * i / Math.max(1, liste.length));
+          } catch (e) { ko(e); return; }
           if (i < liste.length) setTimeout(lot, 0); else ok();
         })();
       });
     }).then(function () {
-      jeu.dossier = dossier;
+      PAQUETS.forEach(function (n) { paquetsPrets[n] = true; });
+      jeu.dossier = dossier; jeuEnCours = null; requetesJeu = [];
       boite = calculerBoite();
+      majVuesRegions();
       majVisibilite();
-      charger(DONNEES + 'fiches.json?v=' + VERSION, 'json').then(function (f) {
+      charger(DONNEES + 'fiches.json?v=' + V_JEU, 'json').then(function (f) {
         if (gen === jeu.gen) { fiches = lireJSON(f); majEtiquette(); }
       }, function () {});
       construireIndexRecherche();
       el('accueil-prog').classList.add('pret');
       progression(1, 'Modèle prêt.');
+      sonde.journal.push(dossier);
       sonde.pret = true;
+      if (dossier) garderRegion(dossier);
+    }, function (e) {
+      // jeu inutilisable : on le libère pour que le suivant parte d'un état propre
+      if (gen === jeu.gen) { jeuEnCours = null; requetesJeu = []; viderJeu(); }
+      throw e;
     });
   }
-  // File d'attente : un seul jeu de données chargé à la fois
+  // File d'attente : un seul jeu de données chargé à la fois ; un échec ne la bloque pas
   var fileJeu = Promise.resolve();
   function assurerJeu(dossier, manifesteDeja) {
-    fileJeu = fileJeu.catch(function () {}).then(function () {
+    var suite = fileJeu.catch(function () {}).then(function () {
       if (jeu.dossier === dossier && M) return;
       return chargerJeu(dossier, manifesteDeja);
     });
-    return fileJeu;
+    fileJeu = suite.catch(function () {});
+    return suite;
+  }
+
+  // ---------- Régions gardées pour le hors connexion ----------
+  // Une région ouverte en ligne est téléchargée entière, en arrière-plan, dans un cache à part.
+  // Tout ou rien : si un enregistrement échoue (quota de Safari ≈ 50 Mo), on retire toute la région du cache.
+  var gardes = {}; // dossier → 'en cours' | 'complète' | 'échec'
+  function fichiersRegion(dossier) {
+    var paq = {}, l = ['manifeste.json', 'fiches.json', 'ao-os.bin', 'ao-muscles.bin', 'fibres-s.bin'];
+    M.pieces.forEach(function (p) { paq[p.paquet] = true; });
+    return l.concat(Object.keys(paq).map(function (n) { return n + '.bin'; })).map(function (f) { return 'donnees/' + dossier + f + '?v=' + DONNEES_REGIONS; });
+  }
+  function garderRegion(dossier) {
+    if (!window.caches || gardes[dossier] === 'en cours' || gardes[dossier] === 'complète') return;
+    var urls = fichiersRegion(dossier), cache = null;
+    gardes[dossier] = 'en cours';
+    caches.open(CACHE_REGIONS).then(function (c) {
+      cache = c;
+      return Promise.all(urls.map(function (u) { return c.match(u); }));
+    }).then(function (deja) {
+      var manquants = urls.filter(function (u, i) { return !deja[i]; });
+      // un fichier après l'autre : la mémoire de l'iPad mini 2 est comptée
+      return manquants.reduce(function (suite, u) {
+        return suite.then(function () {
+          return fetch(u).then(function (rep) {
+            if (!rep.ok) throw erreur('absent : ' + u, rep.status);
+            return cache.put(u, rep).catch(function () { var e = erreur('mémoire pleine', -2); e.quota = true; throw e; });
+          });
+        });
+      }, Promise.resolve());
+    }).then(function () { gardes[dossier] = 'complète'; }, function (e) {
+      gardes[dossier] = 'échec';
+      if (cache) urls.forEach(function (u) { cache['delete'](u).catch(function () {}); });
+      if (e && e.quota) bulle('Mémoire de l’iPad insuffisante : cette région restera disponible seulement en ligne.', 4500);
+    });
   }
 
   var NOMS_PAQUETS = { insertions: 'des insertions', cardio: 'du cœur et des vaisseaux', visceres: 'des viscères', lymphatique: 'du système lymphatique', encephale: 'de l’encéphale', sens: 'de l’œil et de l’oreille' };
@@ -500,15 +603,21 @@
     var aucune = !M.pieces.some(function (p) { return p.paquet === nom; });
     if (aucune) { paquetsPrets[nom] = true; return Promise.resolve(); } // ce jeu n'a aucune pièce de ce paquet
     bulle('Chargement ' + (NOMS_PAQUETS[nom] || '') + '…', 0);
-    paquetsEnCours[nom] = charger(DONNEES + nom + '.bin?v=' + VERSION, 'arraybuffer').then(function (buf) {
+    paquetsEnCours[nom] = charger(DONNEES + nom + '.bin?v=' + V_JEU, 'arraybuffer', null, tailleMin(nom)).then(function (buf) {
       if (gen !== jeu.gen) return; // le jeu de données a changé entre-temps
-      M.pieces.forEach(function (p) { if (p.paquet === nom) { construireMesh(p, buf); meshes[p.id].visible = false; } });
+      var faits = [];
+      try {
+        M.pieces.forEach(function (p) { if (p.paquet === nom) { construireMesh(p, buf); meshes[p.id].visible = false; faits.push(p.id); } });
+      } catch (e) { // fichier abîmé : on retire ce qui a été construit
+        faits.forEach(function (id) { groupe.remove(meshes[id]); meshes[id].geometry.dispose(); meshes[id] = undefined; });
+        throw e;
+      }
       paquetsPrets[nom] = true;
       delete paquetsEnCours[nom];
       cacherBulle();
-    }, function (e) {
-      delete paquetsEnCours[nom];
-      bulle('Chargement impossible (connexion ?)', 3000);
+    }).catch(function (e) {
+      if (gen === jeu.gen) delete paquetsEnCours[nom]; // un nouvel essai reste possible
+      bulle(MSG_HORS_LIGNE, 3500);
       throw e;
     });
     return paquetsEnCours[nom];
@@ -760,9 +869,12 @@
     }
     majEtiquette(); majVisibilite(); majOutils();
   }
+  // plus aucune structure isolée (on vient de masquer la dernière) : on sort de l'isolement au lieu d'un écran vide
+  function isoleVide() { if (etat.isole && !Object.keys(etat.isole).length) etat.isole = null; }
   function masquerSelection() {
     if (!etat.sel) return;
     selectionnes().forEach(function (p) { etat.masques[p.id] = true; if (etat.isole) delete etat.isole[p.id]; });
+    isoleVide();
     choisir(null);
   }
   function transpSelection() {
@@ -791,7 +903,7 @@
       var cles = clesInsertion(p.en), trouve = 0;
       M.pieces.forEach(function (q) { if (q.paquet === 'insertions' && cles[nomMuscle(q.muscle)] && (!p.cote || q.cote === p.cote)) trouve++; });
       if (!trouve) bulle('Pas de zone d’insertion dessinée pour ce muscle.', 2600);
-    });
+    }, function () {}); // l'échec est déjà annoncé par une bulle ; un nouvel essai reste possible
   };
   el('b-etat').onclick = toutReafficher;
 
@@ -917,11 +1029,24 @@
     var vc = el('vues-corps');
     VUES_CORPS.forEach(function (v) {
       var b = document.createElement('button'); b.textContent = v.nom;
-      b.onclick = function () { var R = REGIONS_ACC[etat.region] || REGIONS_ACC.corps; placer(new THREE.Vector3().fromArray(R.cible), v.dir, R.dist, false); fermerPanneaux(); };
+      b.onclick = function () { fermerPanneaux(); cadrerRegion(false, v.dir); };
       vc.appendChild(b);
     });
+    afficherMesVues();
+  }
+  // Une vue de région n'est proposée que si toutes ses pièces existent dans le jeu chargé (sinon la caméra viserait le vide)
+  function pieceExiste(en, cote) {
+    for (var i = 0; i < M.pieces.length; i++) { var p = M.pieces[i]; if (p.en === en && (!cote || p.cote === cote) && p.couche !== 'insertions') return true; }
+    return false;
+  }
+  function vueDisponible(r) {
+    return r.cible.every(function (it) { return it[1] === 'X' ? pieceExiste(it[0], 'D') && pieceExiste(it[0], 'G') : pieceExiste(it[0], it[1]); });
+  }
+  function majVuesRegions() {
     var vr = el('vues-regions');
-    REGIONS.forEach(function (r) {
+    vr.innerHTML = '';
+    if (!M) return;
+    REGIONS.filter(vueDisponible).forEach(function (r) {
       if (!r.cotes) {
         var b = document.createElement('button'); b.textContent = r.nom;
         b.onclick = function () { allerRegion(r, ''); };
@@ -938,7 +1063,6 @@
         d.appendChild(cs); vr.appendChild(d);
       }
     });
-    afficherMesVues();
   }
 
   // Vues personnelles (mémorisées sur cet iPad)
@@ -1040,9 +1164,15 @@
     if (etat.sel && meshes[etat.sel.id] && !visibleSelonCouches(etat.sel) && !etat.isole) choisir(null);
     synchroniserCommandes(); majEtiquette(); majVisibilite();
   }
+  // Sortie du mode « seule couche » (appui long) : on retrouve les couches telles qu'elles étaient
+  function quitterSeule() {
+    if (!etat.seule) return;
+    etat.yeux = etat.seule.yeux; etat.force = etat.seule.force; etat.seule = null;
+  }
   function regler(r) {
     r = Math.max(0, Math.min(6, r));
-    if (r === etat.regle && !Object.keys(etat.force).length) return;
+    if (r === etat.regle && !Object.keys(etat.force).length && !etat.seule) return;
+    quitterSeule();
     etat.regle = r; etat.force = {};
     if (etat.isole) etat.isole = null;
     apresChangementCouches();
@@ -1106,10 +1236,17 @@
       if (etat[c] && PAQUET_DE[c] && !paquetsPrets[PAQUET_DE[c]]) chargerPaquet(PAQUET_DE[c]).then(majVisibilite, function () { etat[c] = false; synchroniserCommandes(); });
     });
   }
+  function systemePresent(c) { return M.pieces.some(function (p) { return p.couche === c; }); }
   function basculerSysteme(s) {
     var allume;
-    if (s === 'organes') { var tous = ORGANES.every(function (o) { return etat[o]; }); ORGANES.forEach(function (o) { etat[o] = !tous; }); allume = !tous; }
-    else { etat[s] = !etat[s]; allume = etat[s]; }
+    if (s === 'organes') {
+      var dispo = ORGANES.filter(systemePresent);
+      var tous = dispo.length && dispo.every(function (o) { return etat[o]; });
+      dispo.forEach(function (o) { etat[o] = !tous; }); allume = !tous && dispo.length > 0;
+      if (!dispo.length) { bulle('Non disponible dans cette région.', 2200); synchroniserCommandes(); return; }
+    } else if (!etat[s] && !systemePresent(s)) { // ex. l'encéphale dans le tronc
+      bulle('Non disponible dans cette région.', 2200); synchroniserCommandes(); return;
+    } else { etat[s] = !etat[s]; allume = etat[s]; }
     if (allume && peauCouvre()) etat.regle = 2;
     chargerSystemesActifs();
     apresChangementCouches();
@@ -1163,7 +1300,8 @@
     if (ouvert) return;
     p.classList.add('ouvert'); document.body.classList.add('panneau-ouvert');
     var b = document.querySelector('[data-panneau="' + id + '"]'); if (b) b.classList.add('actif');
-    if (id === 'p-recherche') setTimeout(function () { el('champ-recherche').focus(); }, 250);
+    // focus dans le même geste que le toucher : sinon iOS 12 n'ouvre pas le clavier
+    if (id === 'p-recherche') el('champ-recherche').focus();
     if (id === 'p-reglages') el('b-quiz').textContent = etat.quiz ? 'Arrêter le quiz' : 'Lancer le quiz';
   }
   for (var bp = 0; bp < boutonsPanneau.length; bp++) {
@@ -1172,14 +1310,73 @@
 
   // ---------- Accueil et régions ----------
   // dossier : jeu de données détaillé de la région (s'il manque, on retombe sur le corps entier, cadré sur la région)
+  // boite : étendue de la région en cm (celle du manifeste de région quand il existe, sinon celle-ci, qui sert au repli)
   var REGIONS_ACC = {
-    corps: { nom: 'Corps entier', dossier: '', cible: [0, 76, 0], dir: [0, 0.05, 1], dist: 352 },
-    'tete-cou': { nom: 'Tête et cou', dossier: 'tete-cou/', cible: [0, 156, 3], dir: [0.3, 0.08, 1], dist: 82 },
-    tronc: { nom: 'Tronc', dossier: 'tronc/', cible: [0, 114, 0], dir: [0, 0.05, 1], dist: 168 },
-    'membre-superieur': { nom: 'Membre supérieur', dossier: 'membre-superieur/', cible: [0, 108, 0], dir: [0, 0.05, 1], dist: 182 },
-    'membre-inferieur': { nom: 'Membre inférieur', dossier: 'membre-inferieur/', cible: [0, 48, 2], dir: [0, 0.05, 1], dist: 205 },
-    squelette: { nom: 'Squelette', dossier: '', cible: [0, 76, 0], dir: [0, 0.05, 1], dist: 352, regle: 5, ligaments: true, sous: 'os et articulations' }
+    corps: { nom: 'Corps entier', dossier: '', dir: [0, 0.05, 1], classique: true, boite: [[-33.5, 0.7, -13.1], [33.5, 170.7, 13.7]] },
+    'tete-cou': { nom: 'Tête et cou', dossier: 'tete-cou/', dir: [0.3, 0.08, 1], boite: [[-20.2, 132.2, -12.2], [20.2, 170.9, 11.7]] },
+    tronc: { nom: 'Tronc', dossier: 'tronc/', dir: [0, 0.05, 1], boite: [[-23.1, 68.4, -14.8], [23.1, 154, 13.2]] },
+    'membre-superieur': { nom: 'Membre supérieur', dossier: 'membre-superieur/', dir: [0, 0.05, 1], boite: [[-34, 69.8, -11.7], [34, 144.6, 10]] },
+    'membre-inferieur': { nom: 'Membre inférieur', dossier: 'membre-inferieur/', dir: [0, 0.05, 1], boite: [[-18.2, -0.1, -14.4], [18.2, 103.9, 14.6]] },
+    squelette: { nom: 'Squelette', dossier: '', dir: [0, 0.05, 1], classique: true, boite: [[-33.5, 0.7, -13.1], [33.5, 170.7, 13.7]], regle: 5, ligaments: true, sous: 'os et articulations' }
   };
+  // Boîte d'une région : ce que son jeu détaillé affiche à l'ouverture (la boîte du manifeste englobe aussi des organes
+  // et vaisseaux masqués au départ, ce qui rapetissait la tête) ; en repli sur le corps entier, l'étendue connue de la région.
+  function boiteRegion() {
+    var R = REGIONS_ACC[etat.region] || REGIONS_ACC.corps;
+    return (jeu.dossier && boiteContenu()) || (jeu.dossier && M && M.boite) || R.boite;
+  }
+  // ---------- Cadrage : faire tenir une boîte dans la zone libre de l'écran ----------
+  // Zone libre : sous la barre du haut, au-dessus de la barre d'outils, à gauche de la règle des couches.
+  function zoneLibre() {
+    var W = window.innerWidth, H = window.innerHeight, m = 8;
+    var haut = el('barre-haut').getBoundingClientRect().bottom;
+    var bo = el('barre-outils').getBoundingClientRect(), co = el('couches').getBoundingClientRect();
+    return { g: m, d: (co.width ? co.left : W) - m, h: haut + m, b: (bo.height ? bo.top : H) - m };
+  }
+  var vCadre = new THREE.Vector3();
+  function rectProjete(b, cible, dir, dist) {
+    camera.position.copy(cible).addScaledVector(dir, dist); camera.lookAt(cible); camera.updateMatrixWorld();
+    var W = window.innerWidth, H = window.innerHeight, r = { g: 1e9, d: -1e9, h: 1e9, b: -1e9 };
+    for (var i = 0; i < 8; i++) {
+      vCadre.set(b[i & 1][0], b[(i >> 1) & 1][1], b[(i >> 2) & 1][2]).project(camera);
+      var x = (vCadre.x + 1) / 2 * W, y = (1 - vCadre.y) / 2 * H;
+      r.g = Math.min(r.g, x); r.d = Math.max(r.d, x); r.h = Math.min(r.h, y); r.b = Math.max(r.b, y);
+    }
+    return r;
+  }
+  // Centre verticalement dans la zone ; horizontalement, garde le centre de l'écran si la boîte y tient déjà.
+  function cadrer(b, dirTab, instant) {
+    var z = zoneLibre(), H = window.innerHeight;
+    var dir = new THREE.Vector3(dirTab[0], dirTab[1], dirTab[2]).normalize();
+    var C = new THREE.Vector3((b[0][0] + b[1][0]) / 2, (b[0][1] + b[1][1]) / 2, (b[0][2] + b[1][2]) / 2);
+    var rayon = new THREE.Vector3(b[1][0] - b[0][0], b[1][1] - b[0][1], b[1][2] - b[0][2]).length() / 2;
+    var pos0 = camera.position.clone(), cib0 = controls.target.clone();
+    camera.aspect = window.innerWidth / H; camera.updateProjectionMatrix();
+    var lo = rayon * 1.05, hi = 3000, r, k;
+    for (k = 0; k < 40; k++) {
+      var mid = (lo + hi) / 2; r = rectProjete(b, C, dir, mid);
+      if (r.d - r.g <= z.d - z.g && r.b - r.h <= z.b - z.h) hi = mid; else lo = mid;
+    }
+    var dist = hi, cible = C.clone(), droite = new THREE.Vector3(), hautV = new THREE.Vector3(), avant = new THREE.Vector3();
+    for (k = 0; k < 30; k++) {
+      r = rectProjete(b, cible, dir, dist);
+      var dx = (r.g < z.g || r.d > z.d) ? (z.g + z.d) / 2 - (r.g + r.d) / 2 : 0, dy = (z.h + z.b) / 2 - (r.h + r.b) / 2;
+      var dedans = r.g >= z.g - 0.5 && r.d <= z.d + 0.5 && r.h >= z.h - 0.5 && r.b <= z.b + 0.5;
+      if (dedans && Math.abs(dy) < 1) break;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) { dist *= 1.03; continue; } // centrée mais trop grande (perspective)
+      var u = 2 * dist * Math.tan(camera.fov * Math.PI / 360) / H; // cm par pixel à la distance de la cible
+      camera.matrixWorld.extractBasis(droite, hautV, avant);
+      cible.addScaledVector(droite, -dx * u).addScaledVector(hautV, dy * u);
+    }
+    camera.position.copy(pos0); camera.lookAt(cib0); camera.updateMatrixWorld();
+    placer(cible, [dir.x, dir.y, dir.z], dist, instant);
+  }
+  // Corps entier et squelette gardent la vue d'ensemble habituelle (déjà entière à l'écran) ; les régions sont ajustées.
+  function cadrerRegion(instant, dirTab) {
+    var R = REGIONS_ACC[etat.region] || REGIONS_ACC.corps;
+    if (R.classique) placer(new THREE.Vector3(0, 76, 0), dirTab || R.dir, 352, instant);
+    else cadrer(boiteRegion(), dirTab || R.dir, instant);
+  }
   var SYS_ACC = {
     muscles: { sous: 'appareil locomoteur' }, nerfs: { sous: 'système nerveux' }, cardio: { sous: 'cœur et vaisseaux' },
     respiratoire: { sous: 'appareil respiratoire', region: 'tronc' }, digestif: { sous: 'appareil digestif', region: 'tronc' },
@@ -1190,12 +1387,20 @@
   function trouverDossier(R) {
     if (!R.dossier || regionsAbsentes[R.dossier]) return Promise.resolve('');
     if (jeu.dossier === R.dossier) return Promise.resolve(R.dossier);
-    return charger('donnees/' + R.dossier + 'manifeste.json?v=' + VERSION, 'json').then(function (man) {
+    return charger('donnees/' + R.dossier + 'manifeste.json?v=' + DONNEES_REGIONS, 'json').then(function (man) {
       var m = lireJSON(man);
-      if (!m || !m.pieces || !m.pieces.length) throw new Error('manifeste vide');
+      if (!m || !m.pieces || !m.pieces.length) throw erreur('manifeste vide', 404);
       manifestesRegion[R.dossier] = m;
       return R.dossier;
-    }).catch(function () { regionsAbsentes[R.dossier] = true; return ''; });
+    }).catch(function (e) {
+      // absente pour toute la séance seulement si le serveur dit qu'elle n'existe pas ; une coupure passagère se réessaiera
+      if (e.statut === 404) regionsAbsentes[R.dossier] = true;
+      return '';
+    });
+  }
+  function annoncerRepli(R) {
+    bulle(regionsAbsentes[R.dossier] ? 'Pas de modèle détaillé pour « ' + R.nom + ' » : affichage du corps entier.'
+      : 'Modèle détaillé de « ' + R.nom + ' » injoignable pour le moment : affichage du corps entier.', 3500);
   }
   function afficherChargement(titre) {
     el('chargement-titre').textContent = titre;
@@ -1205,8 +1410,8 @@
   function entrerRegion(cle, opt) {
     opt = opt || {};
     var S = opt.systeme ? SYS_ACC[opt.systeme] : null;
-    var cadre = REGIONS_ACC[(S && S.region) || cle] || REGIONS_ACC.corps;
     var R = REGIONS_ACC[cle] || REGIONS_ACC.corps;
+    var cadre = S && S.region ? REGIONS_ACC[S.region] : null;
     fermerPanneaux(); fermerMenu();
     if (etat.dessin) finDessin();
     if (etat.quiz) finQuiz();
@@ -1215,18 +1420,24 @@
     el('titre-region').textContent = R.nom;
     el('titre-sous').textContent = '· ' + (S ? S.sous : R.sous || 'appareil locomoteur');
     var attente = setTimeout(function () { afficherChargement(R.nom); }, 120);
+    jeuVoulu = R.dossier ? undefined : ''; // région : on ne sait pas encore si son dossier existe
+    if (jeuVoulu === '') abandonnerSiInutile();
+    var repli = false;
     return trouverDossier(R).then(function (d) {
+      jeuVoulu = d; repli = !!R.dossier && !d;
+      abandonnerSiInutile(); // premier lancement : le corps entier en cours de chargement ne sert plus
       return assurerJeu(d, manifestesRegion[d]).catch(function (e) {
         if (!d) throw e;
-        regionsAbsentes[d] = true; // jeu de la région illisible : corps entier
+        repli = true; jeuVoulu = ''; // fichier de la région illisible : corps entier
         return assurerJeu('');
       });
     }).then(function () {
       clearTimeout(attente);
       el('chargement').classList.add('cache');
-      reinitialiser(R, opt.systeme);
-      placer(new THREE.Vector3().fromArray(cadre.cible), cadre.dir, cadre.dist, true);
       redimensionner();
+      reinitialiser(R, opt.systeme);
+      if (cadre) cadrer(cadre.boite, cadre.dir, true); else cadrerRegion(true);
+      if (repli) annoncerRepli(R);
     }, function (e) {
       clearTimeout(attente);
       afficherChargement(R.nom);
@@ -1321,6 +1532,7 @@
   });
   // Montrer une structure trouvée par la recherche (en rendant sa couche visible si besoin)
   function allerA(p) {
+    quitterSeule();
     etat.isole = null; delete etat.masques[p.id];
     var r = rangDe(p);
     if (p.couche === 'muscles') {
@@ -1347,40 +1559,55 @@
       if (etat.multi) basculerMulti();
       choisir(p);
       volerVers(p);
-    });
+    }, function () {});
   }
 
   // ---------- Gestes sur le corps : toucher, toucher deux fois, appui long ----------
-  var debut = null, appuiT = null, appuiFait = false, menuEtait = false, dernierTap = null;
+  var debut = null, appuiT = null, appuiFait = false, appuiCible = null, menuEtait = false, panneauEtait = false, dernierTap = null;
   function posTouche(e) { var t = (e.changedTouches || e.touches) ? (e.changedTouches || e.touches)[0] : e; return { x: t.clientX, y: t.clientY }; }
   function annulerAppui() { if (appuiT) { clearTimeout(appuiT); appuiT = null; } }
+  // Un panneau ouvert au moment où le doigt se pose : ce toucher sert seulement à le fermer.
+  // Écouté sur le document en phase de capture, donc avant qu'OrbitControls (« start ») ne referme le panneau.
+  function noterPanneau(e) { if (e.target === canvas) panneauEtait = !!document.querySelector('.panneau.ouvert'); }
+  document.addEventListener('touchstart', noterPanneau, { capture: true, passive: true });
+  document.addEventListener(window.PointerEvent ? 'pointerdown' : 'mousedown', noterPanneau, true);
   function debutGeste(x, y) {
     menuEtait = fermerMenu();
     debut = { x: x, y: y, t: Date.now() };
-    appuiFait = false; annulerAppui();
+    appuiFait = false; appuiCible = null; annulerAppui();
     appuiT = setTimeout(function () { appuiT = null; appuiLong(x, y); }, 550);
   }
   function suiteGeste(x, y, seuil) {
     if (!debut) return;
-    if (Math.abs(x - debut.x) > seuil || Math.abs(y - debut.y) > seuil) { annulerAppui(); if (appuiFait) fermerMenu(); }
+    if (Math.abs(x - debut.x) > seuil || Math.abs(y - debut.y) > seuil) {
+      annulerAppui();
+      if (appuiFait) { fermerMenu(); appuiFait = false; appuiCible = null; } // appui long suivi d'une rotation : rien n'est choisi
+    }
   }
   function finGeste(x, y, seuil) {
     annulerAppui();
     if (!debut) return;
     var court = Math.abs(x - debut.x) < seuil && Math.abs(y - debut.y) < seuil && Date.now() - debut.t < 400;
     debut = null;
-    if (appuiFait) { appuiFait = false; return; }
+    if (appuiFait) { // appui long relâché sans bouger : la structure est choisie, le menu agit sur elle
+      appuiFait = false;
+      if (appuiCible && (!etat.multi || !etat.selection[appuiCible.p.id])) choisir(appuiCible.p, appuiCible.point);
+      appuiCible = null;
+      return;
+    }
     if (court && !menuEtait) relache(x, y);
   }
+  // geste interrompu par le système (appel, Centre de contrôle, alerte) : rien ne doit rester en cours
+  function annulerGeste() { annulerAppui(); debut = null; pince = null; if (appuiFait) { fermerMenu(); appuiFait = false; appuiCible = null; } }
   function appuiLong(x, y) {
     if (etat.dessin || etat.quiz || !debut) return;
     var h = viser(x, y, false); if (!h) return;
     var p = h.object.userData.p; if (p.couche === 'insertions') return;
-    appuiFait = true;
-    if (!etat.multi || !etat.selection[p.id]) choisir(p, h.point);
+    appuiFait = true; appuiCible = { p: p, point: h.point.clone() };
     ouvrirMenu(x, y, p);
   }
   function relache(x, y) {
+    if (panneauEtait) { panneauEtait = false; fermerPanneaux(); return; }
     var t = Date.now();
     if (dernierTap && t - dernierTap.t < 330 && Math.abs(x - dernierTap.x) < 30 && Math.abs(y - dernierTap.y) < 30) {
       dernierTap = null; doubleToucher(x, y); return;
@@ -1399,6 +1626,7 @@
     if (etat.dessin || e.touches.length) return;
     var p = posTouche(e); finGeste(p.x, p.y, 10);
   });
+  canvas.addEventListener('touchcancel', annulerGeste, { passive: true });
   // souris (ordinateur) : three.js bloque « mousedown », on écoute donc « pointer » quand il existe
   var EV_BAS = window.PointerEvent ? 'pointerdown' : 'mousedown', EV_HAUT = window.PointerEvent ? 'pointerup' : 'mouseup', EV_MVT = window.PointerEvent ? 'pointermove' : 'mousemove';
   function estSouris(e) { return !e.pointerType || e.pointerType === 'mouse'; }
@@ -1450,7 +1678,7 @@
     if (etat.outil !== 'nommer') bulle(AIDES_OUTILS[nom], 2400);
   }
   function appliquerOutil(nom, p, point) {
-    if (nom === 'masquer') { etat.masques[p.id] = true; if (etat.isole) delete etat.isole[p.id]; if (etat.selection[p.id]) choisir(null); else majVisibilite(); }
+    if (nom === 'masquer') { etat.masques[p.id] = true; if (etat.isole) delete etat.isole[p.id]; isoleVide(); if (etat.selection[p.id]) choisir(null); else majVisibilite(); }
     else if (nom === 'transparent') { etat.transp[p.id] = true; if (etat.selection[p.id]) choisir(null); else { rafraichirMateriaux([p]); majVisibilite(); } }
     else if (nom === 'isoler') { choisir(p, point); isolerSelection(true); choisirOutil('nommer'); }
   }
@@ -1458,7 +1686,12 @@
   el('o-transp').onclick = function () { actionOutil('transparent'); };
   el('o-isoler').onclick = function () { actionOutil('isoler'); };
   el('o-masquer').onclick = function () { actionOutil('masquer'); };
-  el('o-toutvoir').onclick = function () { fermerMenu(); toutReafficher(); };
+  // « Tout voir » : tout réafficher et faire tenir la région à l'écran, dans la direction de vue actuelle
+  el('o-toutvoir').onclick = function () {
+    fermerMenu(); toutReafficher();
+    var d = camera.position.clone().sub(controls.target).normalize();
+    cadrerRegion(false, [d.x, d.y, d.z]);
+  };
 
   // ---------- Menu de l'appui long ----------
   var menu = el('menu-appui');
@@ -1535,6 +1768,7 @@
   }
   function questionSuivante() {
     var q = etat.quiz; if (!q) return;
+    clearTimeout(q.minuterie); q.minuterie = null; q.n++;
     marquer(null);
     var qEl = el('quiz-question'), cEl = el('quiz-choix');
     qEl.className = ''; cEl.innerHTML = '';
@@ -1561,7 +1795,7 @@
         for (var i = 0; i < bs.length; i++) if (bs[i].textContent === nomQuiz(cible)) bs[i].className = 'bon';
         qEl.className = ok ? 'bon' : 'faux'; qEl.textContent = ok ? 'Bonne réponse !' : 'C’était : ' + nomQuiz(cible);
         el('quiz-score').textContent = q.bons + ' / ' + q.total;
-        setTimeout(questionSuivante, ok ? 1100 : 2200);
+        q.minuterie = setTimeout(questionSuivante, ok ? 1100 : 2200);
       };
       cEl.appendChild(b);
     });
@@ -1575,17 +1809,18 @@
     if (ok) { q.bons++; marquer(p, 'bon'); qEl.className = 'bon'; qEl.textContent = 'Bravo : ' + nomQuiz(p); }
     else { marquer(q.cible, 'cible'); qEl.className = 'faux'; qEl.textContent = 'Non, c’est : ' + nomQuiz(p) + ' — la bonne réponse est en orange.'; }
     el('quiz-score').textContent = q.bons + ' / ' + q.total;
-    setTimeout(questionSuivante, ok ? 1100 : 2600);
+    q.minuterie = setTimeout(questionSuivante, ok ? 1100 : 2600);
   }
   function debutQuiz() {
     fermerPanneaux(); fermerMenu(); if (etat.dessin) finDessin(); if (etat.multi) basculerMulti();
     choisir(null);
-    etat.quiz = { mode: etat.quiz ? etat.quiz.mode : 'ou', bons: 0, total: 0, cible: null, marque: {} };
+    etat.quiz = { mode: etat.quiz ? etat.quiz.mode : 'ou', bons: 0, total: 0, cible: null, marque: {}, n: 0, minuterie: null };
     el('barre-quiz').classList.remove('cache');
     document.body.classList.add('quiz');
     questionSuivante();
   }
   function finQuiz() {
+    if (etat.quiz) clearTimeout(etat.quiz.minuterie); // sinon l'ancienne minuterie ferait sauter une question au quiz suivant
     marquer(null);
     etat.quiz = null;
     el('barre-quiz').classList.add('cache');
@@ -1853,7 +2088,9 @@
 
   // Sonde de lecture pour les tests automatiques (aucun effet sur l'usage normal)
   var sonde = window.__anatomie = {
-    pret: false, version: VERSION, etat: etat, camera: camera, controls: controls, renderer: renderer, scene: scene,
+    pret: false, journal: [], version: VERSION, etat: etat,
+    regionGardee: function (d) { return gardes[d] || ''; },
+    boiteRegion: function () { return boiteRegion(); }, camera: camera, controls: controls, renderer: renderer, scene: scene,
     manifeste: function () { return M; },
     jeu: function () { return { dossier: jeu.dossier, region: etat.region, pieces: M ? M.pieces.length : 0 }; },
     surAccueil: function () { return document.body.classList.contains('sur-accueil'); },
@@ -1871,6 +2108,14 @@
       g.readPixels(Math.round(x * pr), Math.round((window.innerHeight - y) * pr), 1, 1, g.RGBA, g.UNSIGNED_BYTE, b);
       return b[3];
     },
+    // part des pixels dessinés presque noirs (taches sur les faces coupées)
+    tachesCoupe: function () {
+      renderer.render(scene, camera);
+      var g = renderer.getContext(), w = canvas.width, h = canvas.height, b = new Uint8Array(w * h * 4), n = 0, noirs = 0;
+      g.readPixels(0, 0, w, h, g.RGBA, g.UNSIGNED_BYTE, b);
+      for (var i = 0; i < b.length; i += 4) if (b[i + 3] > 200) { n++; if (Math.max(b[i], b[i + 1], b[i + 2]) < 28) noirs++; }
+      return n ? Math.round(noirs / n * 10000) / 10000 : 0;
+    },
     info: function () { renderer.render(scene, camera); return { appels: renderer.info.render.calls, triangles: renderer.info.render.triangles, pr: renderer.getPixelRatio(), w: canvas.width, h: canvas.height }; }
   };
   construireVues();
@@ -1879,6 +2124,7 @@
   redimensionner();
   // Le corps entier se charge pendant que l'accueil est affiché
   assurerJeu('').catch(function (e) {
+    if (e.abandon) return; // une région a été choisie entre-temps
     progression(0, 'Impossible de charger le modèle. Vérifiez la connexion puis rouvrez l’application. (' + e.message + ')');
   });
 })();

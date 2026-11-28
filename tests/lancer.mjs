@@ -7,6 +7,7 @@ import { demarrerServeur, lancerNavigateur } from './commun.mjs';
 
 const args = process.argv.slice(2);
 const rapide = args.includes('--rapide');
+const seulDefauts = args.includes('--defauts'); // seulement les défauts corrigés après la relecture 1.3 (cycle court)
 const majReferences = args.includes('--maj-references');
 const iLigne = args.indexOf('--en-ligne');
 const enLigne = iLigne >= 0 ? (args[iLigne + 1] || 'https://sds-sdis73.github.io/anatomie-3d/') : null;
@@ -21,8 +22,9 @@ if (!rapide) {
   const srv = enLigne ? { url: enLigne + (enLigne.indexOf('?') < 0 ? '?test=' + Date.now() : ''), fermer() {} } : await demarrerServeur();
   const nav = await lancerNavigateur();
   try {
-    rapports.push(await (await import('./t-parcours.mjs')).default(nav, srv.url));
-    if (!enLigne) rapports.push(await (await import('./t-visuel.mjs')).default(nav, srv.url, { majReferences }));
+    if (!seulDefauts) rapports.push(await (await import('./t-parcours.mjs')).default(nav, srv.url));
+    if (!enLigne) rapports.push(await (await import('./t-defauts.mjs')).default(nav, srv.url));
+    if (!enLigne && !seulDefauts) rapports.push(await (await import('./t-visuel.mjs')).default(nav, srv.url, { majReferences }));
   } catch (e) {
     const { Rapport } = await import('./commun.mjs');
     const r = new Rapport('Erreur imprévue'); r.ok(false, 'le test s’est interrompu', e.stack.split('\n').slice(0, 3).join(' / ')); rapports.push(r);

@@ -28,6 +28,8 @@ html, body {
   touch-action: none;
 }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+/* iOS 12 ne comprend que « auto » et « manipulation » : sans cela, deux touchers rapides sur un bouton peuvent zoomer la page */
+button, .rang, a { touch-action: manipulation; }
 .cache { display: none !important; }
 .verre { background: var(--verre); border: 1px solid var(--bord); }
 svg { stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }

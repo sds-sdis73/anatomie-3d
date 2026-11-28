@@ -23,7 +23,7 @@ export function demarrerServeur(dossier = DOCS) {
       res.writeHead(200, { 'Content-Type': TYPES[path.extname(f)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
       fs.createReadStream(f).pipe(res);
     });
-    srv.listen(0, '127.0.0.1', () => ok({ url: 'http://127.0.0.1:' + srv.address().port + '/', fermer: () => srv.close() }));
+    srv.listen(0, '127.0.0.1', () => ok({ url: 'http://127.0.0.1:' + srv.address().port + '/', fermer: () => { srv.close(); if (srv.closeAllConnections) srv.closeAllConnections(); } }));
   });
 }
 

@@ -96,15 +96,24 @@ r.ok(liste.length > 0, 'sw.js : liste des fichiers lisible (' + liste.length + '
 const octetsInstall = liste.map(f => path.join(DOCS, f.split('?')[0] === './' ? 'index.html' : f.split('?')[0])).filter(f => fs.existsSync(f)).reduce((s, f) => s + fs.statSync(f).size, 0);
 r.ok(octetsInstall <= 30e6, (octetsInstall / 1e6).toFixed(1) + ' Mo mis en cache à l’installation (budget 30 Mo)');
 r.ok(demande.every(f => liste.indexOf(f) < 0), 'les régions ne sont pas mises en cache à l’installation (seulement à leur première ouverture)');
-r.ok(/caches\.open\(CACHE\)\.then\(function \(c\) \{ c\.put\(/.test(sw), 'sw.js garde en cache tout fichier téléchargé (régions à la première ouverture)');
+r.ok(/caches\.open\(CACHE\)\.then\(function \(c\) \{ c\.put\(/.test(sw), 'sw.js garde en cache tout fichier de l’application téléchargé');
+// Régions : rangées par l'appli dans un cache à part, avec leur propre version de données (une mise à jour de l'appli ne les efface pas)
+const VR = bac.DONNEES_REGIONS, VRapp = (app.match(/var DONNEES_REGIONS = '([\d.]+)'/) || [])[1];
+r.ok(!!VR && VR === VRapp, 'version des données des régions identique dans sw.js et app.js (' + VR + ' / ' + VRapp + ')');
+r.ok(bac.CACHE_REGIONS && bac.CACHE_REGIONS !== bac.CACHE && /k !== CACHE && k !== CACHE_REGIONS/.test(sw), 'sw.js : la mise à jour de l’appli garde le cache des régions de la même version de données');
+r.ok(typeof bac.estRegion === 'function' && bac.estRegion('/donnees/tronc/os.bin') && !bac.estRegion('/donnees/os.bin') && /!estRegion\(/.test(sw), 'sw.js : les fichiers des régions ne vont pas dans le cache de l’application');
+r.ok(/mode === 'navigate'/.test(sw) && /Response\.error\(\)/.test(sw), 'sw.js : hors connexion, seule une navigation reçoit la page d’accueil ; une donnée absente est refusée');
+r.ok(/caches\.open\(CACHE_REGIONS\)/.test(app) && /\['delete'\]\(u\)/.test(app) && /Mémoire de l’iPad insuffisante/.test(app), 'app.js : une région ouverte est gardée entière dans le cache des régions, ou pas du tout (mémoire insuffisante annoncée)');
 const donneesSw = liste.concat(demande).filter(f => /^donnees\//.test(f));
 const absents = donneesSw.filter(f => !fs.existsSync(path.join(DOCS, f.split('?')[0])));
 r.ok(!absents.length, 'sw.js : chaque fichier de données mis en cache existe', absents.slice(0, 5).join(', '));
-const malVersionnes = donneesSw.filter(f => f.split('?v=')[1] !== V);
-r.ok(!malVersionnes.length, 'sw.js : chaque fichier de données porte la version ' + V, malVersionnes.slice(0, 5).join(', '));
+const estFichierRegion = f => /^donnees\/[^/]+\//.test(f);
+const malVersionnes = donneesSw.filter(f => f.split('?v=')[1] !== (estFichierRegion(f) ? VR : V));
+r.ok(!malVersionnes.length, 'sw.js : chaque fichier de données porte sa version (' + V + ' pour le corps entier, ' + VR + ' pour les régions)', malVersionnes.slice(0, 5).join(', '));
 for (const jeu of jeux) {
   const rel = path.relative(DOCS, jeu.dir).split(path.sep).join('/');
-  const manquants = fs.readdirSync(jeu.dir).filter(f => /\.(bin|json)$/.test(f)).filter(f => donneesSw.indexOf(rel + '/' + f + '?v=' + V) < 0);
+  const v = rel === 'donnees' ? V : VR;
+  const manquants = fs.readdirSync(jeu.dir).filter(f => /\.(bin|json)$/.test(f)).filter(f => donneesSw.indexOf(rel + '/' + f + '?v=' + v) < 0);
   r.ok(!manquants.length, jeu.nom + ' : tous ses fichiers sont mis en cache pour le hors connexion', 'oubliés : ' + manquants.join(', '));
 }
 
