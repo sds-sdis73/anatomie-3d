@@ -29,7 +29,7 @@ html, body {
 }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 /* iOS 12 ne comprend que « auto » et « manipulation » : sans cela, deux touchers rapides sur un bouton peuvent zoomer la page */
-button, .rang, a, #etiquette, #etat, .panneau { touch-action: manipulation; }
+button, .rang, a, #etiquette, #etat, .panneau, #fiche, #barre-quiz, #p-coupe, #couches, #accueil { touch-action: manipulation; }
 .cache { display: none !important; }
 .verre { background: var(--verre); border: 1px solid var(--bord); }
 svg { stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }

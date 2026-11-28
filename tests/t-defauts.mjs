@@ -338,8 +338,8 @@ export default async function (nav, url) {
 
   // ---------- 14 (suite). touch-action sur l'étiquette, le bandeau d'état et les panneaux ----------
   await section(r, '14b', async () => {
-    const ta = await page.evaluate(() => ['etiquette', 'etat', 'p-vues'].map(id => getComputedStyle(document.getElementById(id)).touchAction));
-    r.ok(ta.every(t => t === 'manipulation'), 'étiquette, bandeau d’état et panneaux : touch-action manipulation', ta.join(', '));
+    const ta = await page.evaluate(() => ['etiquette', 'etat', 'p-vues', 'fiche', 'barre-quiz', 'p-coupe', 'couches', 'accueil'].map(id => id + ':' + getComputedStyle(document.getElementById(id)).touchAction));
+    r.ok(ta.every(t => /:manipulation$/.test(t)), 'étiquette, bandeau, panneaux, fiche, quiz, coupe, couches, accueil : touch-action manipulation', ta.filter(t => !/:manipulation$/.test(t)).join(', '));
   });
 
   r.ok(!erreurs.length, 'défauts d’interface : aucune erreur dans la console', erreurs.slice(0, 4).join(' | '));
