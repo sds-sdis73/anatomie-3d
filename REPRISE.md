@@ -95,5 +95,10 @@ Non reproductible : la réalité augmentée (pas d'ARKit ni de WebXR dans Safari
 - Fiches : Z-Anatomy d'après Wikipédia — CC BY-SA.
 - three.js : MIT (`docs/vendor/three-LICENSE.txt`).
 
-## Refonte en cours
-Voir `REFONTE.md` (cahier des charges 1.3) et `conception/maquette.html`. Tests : `tests/` (`node lancer.mjs`), verrou `.githooks/pre-push`, publication par `./deployer.sh` uniquement.
+## Version 1.3 (refonte)
+Cahier des charges `REFONTE.md`, maquette `conception/maquette.html`, captures `conception/captures-1.3/` et `conception/regions/`.
+- Interface : accueil par région, barre du haut (recherche, vues ☆, réglages), règle des couches à droite (glisser, œil, appui long), étiquette accrochée, barre d'outils (Nommer, Plusieurs, Transparent, Isoler, Masquer, Tout voir, Dessiner, Coupe), appui long = menu, double toucher = centrer.
+- Régions : `docs/donnees/<region>/`, un seul jeu en mémoire à la fois, repli sur le corps entier si absent. Hors connexion : chaque région est rangée en entier dans le cache `anatomie3d-regions-<DONNEES_REGIONS>` à sa première ouverture en ligne (tout ou rien, bulle si mémoire insuffisante). Changer `DONNEES_REGIONS` (app.js et sw.js) seulement si les données des régions changent.
+- Coupe : variante du shader `tissu()` utilisée seulement pendant une coupe.
+- Contrôles : `tests/t-defauts.mjs` reproduit chaque défaut trouvé en relecture (`node lancer.mjs --defauts`).
+ Tests : `tests/` (`node lancer.mjs`), verrou `.githooks/pre-push`, publication par `./deployer.sh` uniquement.
